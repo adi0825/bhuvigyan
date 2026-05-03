@@ -1,0 +1,58 @@
+# Frontend folders (excluded as per requirement)
+frontend/
+bhuvigyan-frontend/
+
+# Bhuvigyan folders (excluded as per requirement)
+bhuvigyan/
+
+# Build artifacts
+target/
+build/
+dist/
+node_modules/
+*.jar
+*.war
+*.ear
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env.local
+.env.*.local
+
+# Docker volumes
+data/
+postgres-data/
+redis-data/
+kafka-data/
+
+# Test output
+test-output/
+*.class
+
+# Maven
+.mvn/
+!.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Misc
+*.tmp
+*.temp
+.cache/
