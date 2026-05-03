@@ -1,0 +1,125 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: bhuvigyan-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - http://localhost:4200
+              - http://localhost:4201
+              - http://localhost:4202
+              - http://localhost:4203
+              - http://localhost:4204
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+      default-filters:
+        - AddResponseHeader=X-Gateway, bhuvigyan
+      routes:
+        - id: carbon-service-farmer
+          uri: http://carbon-service:8090
+          predicates:
+            - Path=/api/v1/farmer/carbon/**
+
+        - id: carbon-service-admin
+          uri: http://carbon-service:8090
+          predicates:
+            - Path=/api/v1/admin/carbon/**
+
+        - id: farmer-service
+          uri: http://farmer-service:8081
+          predicates:
+            - Path=/api/v1/farmer/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                rate-limiter: "#{@farmerRateLimiter}"
+                key-resolver: "#{@ipKeyResolver}"
+
+        - id: location-service
+          uri: http://location-service:8084
+          predicates:
+            - Path=/api/v1/locations/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                rate-limiter: "#{@farmerRateLimiter}"
+
+        - id: kgis-proxy
+          uri: http://location-service:8084
+          predicates:
+            - Path=/api/v1/kgis/**
+
+        - id: claims-admin-service
+          uri: http://claims-service:8083
+          predicates:
+            - Path=/api/v1/admin/dashboard,/api/v1/admin/review-queue,/api/v1/admin/claims/**,/api/v1/admin/heatmap,/api/v1/admin/audit-log/**,/api/v1/admin/udlrn/**
+
+        - id: admin-service
+          uri: http://admin-service:8082
+          predicates: [ "Path=/api/v1/admin/**" ]
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                rate-limiter: "#{@adminRateLimiter}"
+
+        - id: claims-service
+          uri: http://claims-service:8083
+          predicates: [ "Path=/api/v1/claims/**" ]
+
+        - id: state-router-service
+          uri: http://state-router-service:8088
+          predicates: [ "Path=/api/v1/state-router/**" ]
+
+        - id: land-api-service
+          uri: http://land-api-service:8085
+          predicates: [ "Path=/api/v1/land/**" ]
+
+        - id: kyc-service
+          uri: http://kyc-service:8086
+          predicates: [ "Path=/api/v1/kyc/**" ]
+
+        - id: notification-service
+          uri: http://notification-service:8087
+          predicates: [ "Path=/api/v1/notifications/**" ]
+
+        - id: ml-service
+          uri: http://ml-service:8000
+          predicates: [ "Path=/satellite/**" ]
+
+        - id: analytics-service
+          uri: http://analytics-service:8091
+          predicates: [ "Path=/api/v1/analytics/**" ]
+
+        - id: insurer-service
+          uri: http://insurer-service:8092
+          predicates: [ "Path=/api/v1/insurer/**" ]
+
+bhuvigyan:
+  jwt:
+    secret:            ${JWT_SECRET}
+    issuer:            ${JWT_ISSUER:bhuvigyan.gov.in}
+    accessTtlMinutes:  ${JWT_ACCESS_TTL_MINUTES:15}
+    refreshTtlDays:    ${JWT_REFRESH_TTL_DAYS:7}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always

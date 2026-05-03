@@ -1,0 +1,36 @@
+# application-local.yml — Report Service
+server:
+  port: ${SERVER_PORT:8089}
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/bhuvigyan?sslmode=disable
+    username: bhuvigyan
+    password: bhuvigyan123
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+app:
+  dev-mode: true
+  kafka-enabled: false
+  cassandra-enabled: false
+  minio-enabled: false
+bhuvigyan:
+  jwt:
+    secret: bhuvigyan-local-dev-secret-key-2026-very-long-string-must-be-64-chars
+    issuer: bhuvigyan.gov.in
+    accessTtlMinutes: 60
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+logging:
+  level:
+    in.gov.bhuvigyan: DEBUG

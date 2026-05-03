@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: bhuvigyan
+    orgId: 1
+    folder: Bhuvigyan
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

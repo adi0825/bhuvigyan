@@ -1,0 +1,44 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: state-router-service
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+
+bhuvigyan:
+  jwt:
+    secret:           ${JWT_SECRET}
+    issuer:           ${JWT_ISSUER:bhuvigyan.gov.in}
+    accessTtlMinutes: ${JWT_ACCESS_TTL_MINUTES:15}
+    refreshTtlDays:   ${JWT_REFRESH_TTL_DAYS:7}
+  state:
+    mode: ${STATE_API_MODE:dev}
+  kgis:
+    url: ${KGIS_BASE_URL:https://kgis.ksrsac.in/kgis}
+  bhoomi:
+    url: ${BHOOMI_BASE_URL:https://landrecords.karnataka.gov.in}
+  karnataka:
+    apiKey: ${KGIS_API_KEY:}
+  mahabhumi:
+    url:        ${MAHABHUMI_BASE_URL:https://abhilekh.mahabhumi.gov.in}
+    khata8aUrl: ${MAHABHUMI_8A_BASE_URL:https://digitalsatbara.mahabhumi.gov.in}
+  maharashtra:
+    apiKey: ${MAHABHUMI_API_KEY:}
+  telangana:
+    apiKey: ${TELANGANA_API_KEY:}
+  punjab:
+    apiKey: ${PUNJAB_API_KEY:}
+  up:
+    apiKey: ${UP_BHULEKH_API_KEY:}
+  rajasthan:
+    apiKey: ${APNAKHATA_API_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

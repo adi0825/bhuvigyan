@@ -1,0 +1,48 @@
+name: bhuvigyan-minimal
+
+networks:
+  bhuvigyan-net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  redis_data:
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: bhuvigyan-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bhuvigyan}
+      POSTGRES_USER: ${POSTGRES_USER:-bhuvigyan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bhuvigyan}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [bhuvigyan-net]
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: bhuvigyan-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    networks: [bhuvigyan-net]
+
+  farmer-service:
+    build:
+      context: ./backend
+      dockerfile: farmer-service/Dockerfile
+    container_name: bhuvigyan-farmer-service
+    depends_on: [redis, postgres]
+    env_file: [.env]
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    ports:
+      - "8081:8081"
+    networks: [bhuvigyan-net]
