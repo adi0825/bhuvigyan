@@ -1,0 +1,214 @@
+Bhuvigyan V6 — build checklist
+0%
+Reset
+V1__create_enums.sql — all 12 enum typesDB
+V2__create_users.sql — users table + indexesDB
+V3__create_farmers.sql — farmers table + bank indexesDB
+V4__create_udlrn.sql — udlrn_master with PostGIS GEOGRAPHY columnsDB
+V5__create_land_history.sql — land_ownership_historyDB
+V6__create_policies.sql — policies + unique season indexDB
+V7__create_claims.sql — claims + trace_id indexDB
+V8__create_claim_docs.sql — claim_documentsDB
+V9__create_land_cache.sql — land_adapter_cache + expires_at indexDB
+V10__create_satellite.sql — satellite_jobsDB
+V11__create_features.sql — fraud_feature_snapshotsDB
+V12__create_scores.sql — fraud_scoresDB
+V13__create_decisions.sql — decisionsDB
+V14__create_evidence.sql — evidence_packagesDB
+V15__create_field_visits.sql — field_visitsDB
+V16__create_appeals.sql — appealsDB
+V17__create_notifications.sql — notificationsDB
+V18__create_outbox.sql — event_outboxDB
+V19__create_audit.sql — audit_eventsDB
+V20__create_rule_profiles.sql — rule_profilesDB
+V21__create_aggregates.sql — district_aggregatesDB
+V22__seed_dev_data.sql — all seed rows (6 users, 2 farmers, 3 parcels, 5 claims)DB
+Flyway runs clean — zero errors on fresh schemaDB
+PostGIS extension enabled in Postgres initDBInfra
+User entity — all fields, role enum, JPA annotationsDB
+Farmer entity — FK to users, bank fieldsDB
+UdlrnMaster entity — GEOGRAPHY fields via Hibernate SpatialDB
+LandOwnershipHistory entityDB
+Policy entity — unique index on udlrn+season+yearDB
+Claim entity — status enum, verdict enum, traceIdDB
+ClaimDocument entityDB
+LandAdapterCache entity — expiresAt field, JSONB responseJsonDB
+SatelliteJob entity — ndviTimeline as JSONBDB
+FraudFeatureSnapshot entity — features as JSONBDB
+FraudScore entity — explanation + ruleHits as JSONBDB
+Decision entityDB
+EvidencePackage entity — contentHash fieldDB
+FieldVisit entity — imageKeys JSONBDB
+Appeal entityDB
+Notification entityDB
+EventOutbox entity — status enum, attemptCountDB
+AuditEvent entity — append-only (no update)DB
+RuleProfile entity — rules + thresholds JSONBDB
+DistrictAggregate entityDB
+JPA repository for every entity aboveDB
+POST /auth/otp/send — sends OTP, returns otpTokenAPI
+POST /auth/otp/verify — validates OTP, returns JWT pairAPI
+POST /auth/login — password loginAPI
+POST /auth/refresh — refresh token rotationAPI
+POST /auth/logout — token invalidationAPI
+Dev mode universal OTP 123456 acceptedAPI
+POST /farmers/registerAPI
+GET /farmers/{id}API
+PATCH /farmers/{id}API
+GET /farmers/{id}/parcelsAPI
+GET /farmers/{id}/claims — paginatedAPI
+GET /udlrn/{udlrn} — resolve parcel detailAPI
+GET /udlrn/{udlrn}/history — ownership recordsAPI
+POST /udlrn/resolve — triggers state adapterAPI
+GET /udlrn/{udlrn}/policy-check — eligibilityAPI
+POST /claims — creates DRAFT claimAPI
+GET /claims/{id}API
+PATCH /claims/{id} — update draftAPI
+POST /claims/{id}/submit — DRAFT → SUBMITTED, fires claim.filed eventAPI
+GET /claims/{id}/status — lightweight status checkAPI
+POST /claims/{id}/documents — multipart uploadAPI
+GET /claims/{id}/documentsAPI
+POST /claims/{id}/appealAPI
+GET /claims — paginated, filterable by status/farmerAPI
+Duplicate claim prevention enforced on submitAPI
+Claim number format BHU-{STATE}-{YYYYMM}-{SEQ} generatedAPI
+Trace ID generated at gateway and propagated in X-Trace-Id headerAPIInfra
+GET /land/{udlrn}/verify — calls state adapterAPI
+GET /land/{udlrn}/cache — cache inspectionAPI
+DELETE /land/{udlrn}/cache — admin cache bustAPI
+GET /land/adapters/health — per-adapter statusAPI
+POST /satellite/jobs — queue satellite jobAPI
+GET /satellite/jobs/{id}API
+GET /satellite/{claimId}/ndvi — timeline responseAPI
+GET /satellite/{claimId}/images — signed URLsAPI
+POST /scoring/score — trigger scoring for claimAPI
+GET /scoring/{claimId} — full ScoreResponse with explanationAPI
+GET /scoring/{claimId}/features — 47-feature snapshotAPI
+POST /evidence/{claimId}/generateAPI
+GET /evidence/{claimId}/latestAPI
+GET /evidence/{packageId}/download — signed URL redirectAPI
+POST /evidence/{packageId}/verify — hash checkAPI
+POST /field-visitsAPI
+PATCH /field-visits/{id}API
+POST /field-visits/{id}/complete — geo + images + remarksAPI
+GET /field-visits — paginated by officerAPI
+GET /admin/rules — rule profiles by stateAPI
+POST /admin/rules + PATCH /admin/rules/{id}API
+GET /admin/system/healthAPI
+POST /admin/claims/{id}/override — verdict override with reasonAPI
+GET /analytics/heatmap — district-level dataAPI
+GET /analytics/dashboard — summary statsAPI
+GET /analytics/fraud-trendsAPI
+GET /audit/{traceId}API
+GET /audit/claim/{claimId}API
+POST /system/outbox/replay — sysop onlyAPI
+GET /notifications + PATCH read + unread countAPI
+@PreAuthorize annotations on all 29 permission pointsAPI
+FARMER cannot read other farmers claimsAPI
+CSC_OPERATOR cannot override verdictsAPI
+FIELD_OFFICER can read all claims, complete own field visitsAPI
+INSURER read-only on claims + analyticsAPI
+ADMIN can override, manage rules, blacklist operatorsAPI
+SYSOP only: outbox replay, cache delete, system healthAPI
+Every override writes to audit_events — no silent bypassesAPIDB
+StateAdapter interface with verify(), isAvailable(), getStateCode()API
+MaharashtraAdapter — MH_MAHABHULEKH_API_URL, CSC bulk + 8A checksAPIRules
+KarnatakaAdapter — KA_BHOOMI_API_URL, RTC mutation + NDVI contradictionAPIRules
+RajasthanAdapter — RJ_APNA_KHATA_API_URL, heatmap + barren rejectionAPIRules
+TelanganaAdapter — TG_DHARANI_API_URL, GPS boundary mismatchAPIRules
+PunjabAdapter — PB_PLRS_API_URL, khasra deduplicationAPIRules
+UttarPradeshAdapter — UP_BHULEKH_API_URL, multi-policy detectionAPIRules
+All adapters: 5s connect / 15s read timeout configuredAPI
+All adapters: cache-first fallback with 90-day TTLAPIDB
+All adapters: FAILED status returns gracefully, no exception thrownAPI
+State router resolves adapter from UDLRN state prefixAPI
+All 10 NDVI/satellite features generated correctlyML
+All 8 land record features generated correctlyML
+All 9 operator/filing features generated correctlyML
+All 6 bank/financial features generated correctlyML
+All 8 historical claim features generated correctlyML
+All 6 state-specific features generated correctlyML
+Total: exactly 47 keys in output JSONML
+Features stored in fraud_feature_snapshots.features JSONBMLDB
+Feature version tag attached to every snapshotML
+ndvi_loss_contradiction logic: ndvi_mean_claim > 0.45 AND claimed_loss_pct > 60ML
+barren_pre_sowing logic: NDVI < 0.10 in 14-day window before sowingML
+Ensemble: crop classification + anomaly detection + timeline validation modelsML
+Weighted score 0–100 produced from ensembleML
+Top 5 contributing features with weights in explanation outputML
+Rule hits list (rule ID + description) in score outputML
+Model loaded from MinIO model_registry on startupMLInfra
+Model version tagged on every fraud_scores rowMLDB
+Decision bands applied: 0-30 approve, 31-60 review, 61-80 visit, 81-100 rejectMLRules
+Hard override: non-agricultural land → instant reject regardless of scoreMLRules
+Hard override: blocked operator → instant rejectMLRules
+Drift monitoring: score variance logged by crop/district/seasonML
+claim.filed event published on submitInfra
+claim.land.verified event published after adapter successInfra
+satellite.job.requested event published on job creationInfra
+satellite.job.completed event published on job finishInfra
+claim.scored event published after scoringInfra
+claim.review.queued event publishedInfra
+claim.cce.assigned event publishedInfra
+claim.auto.rejected event publishedInfra
+claim.approved event publishedInfra
+fraud.alert event published for CSC bulk, bank cluster, cross-state duplicateInfra
+Outbox fallback: all events write to event_outbox when Kafka unavailableInfraDB
+Outbox poller: runs every 30s, batch 50, max 5 retries with backoffInfra
+Dead-letter events marked FAILED and fraud.alert firedInfra
+Page 1: header, claim summary box, verdict badge, fraud score numeralAPI
+Page 2: land verification result table + mutation history + state-specific dataAPI
+Page 3: true-color + loss map images, NDVI timeline chart, cloud coverAPI
+Page 4: score gauge graphic, top 5 features table, rule hits table, ensemble scoresAPI
+Page 5: decision record, audit trail table, SHA-256 integrity hashAPI
+CONFIDENTIAL diagonal watermark on all pagesAPI
+PDF stored in MinIO under evidence/{claimId}/{version}.pdfAPIInfra
+content_hash (SHA-256) computed and stored in evidence_packagesAPIDB
+Signed URL TTL: 15 min for evidence PDF, 1 hour for satellite imagesAPIInfra
+Evidence regeneratable on demand via POST /evidence/{claimId}/generateAPI
+Kafka unavailable → event_outbox mode active, pipeline unblockedInfra
+Cassandra unavailable → audit writes to audit_events PostgreSQL tableInfraDB
+MinIO unavailable → evidence stored to local filesystem pathInfra
+State adapter unavailable → cache-first with TTL, else satellite-first pathInfra
+Satellite retrieval fails → claim continues with non-satellite checks + manual review flagInfra
+Audit failure never blocks claim pipelineInfra
+GET /system/mode returns current mode + active fallbacks listAPIInfra
+Login page — mobile OTP flow, dev mode 123456 pre-fillUI
+Dashboard — active/approved counts, coverage, recent claims listUI
+File Claim — 4-step stepper: UDLRN → Policy → Loss details → ReviewUI
+UDLRN auto-resolve on step 1 — shows parcel name, area, land useUI
+Ineligible parcel error shown inline, not as alert popupUI
+Claim Detail — status timeline, verdict badge, appeal button if rejectedUI
+Evidence PDF download button visible after generationUI
+Profile — bank details editable, linked parcels listUI
+CSC: farmer search by mobile/Aadhaar before filingUI
+CSC: Filed By: CSC Operator label on claimUI
+CSC: operator fraud rate warning banner if rate > 20%UI
+Officer: review queue table — claim #, score, days in queueUI
+Officer: claim review — full explanation panel + rule hitsUI
+Officer: embedded PDF viewer on claim review pageUI
+Officer: field visit page — map + photo upload + GPS captureUI
+Officer: analytics — choropleth district heatmapUI
+Insurer: claim funnel numbers (submitted → verified → scored → decided)UI
+Insurer: evidence integrity hash + verify buttonUI
+Insurer: fraud trends — score mean over time by stateUI
+System overview — dependency health grid (green/amber/red per service)UI
+Current mode badge: DOCKER or SPLIT_LOCALUI
+Active fallbacks list shown on overviewUI
+Rule management — thresholds editable inline per stateUI
+Rule toggle on/off per state packUI
+Claim override page — verdict dropdown + mandatory reason (min 20 chars)UI
+Override requires password re-entryUI
+Operator monitor — block operator with reason captureUI
+Audit log — search by trace ID, claim ID, actor, event typeUI
+Audit log — expand row shows full JSON payloadUI
+docker-compose.yml with all 26 services definedInfra
+Every service has healthcheck + restart: unless-stoppedInfra
+depends_on with condition: service_healthy for all dependency chainsInfra
+application-dev.yml — all env vars populated for devInfra
+application-prod.yml — all env vars as placeholdersInfra
+Split local mode startup scripts for each serviceInfra
+All 6 state adapter URLs in env configInfra
+OPENAI_API_KEY env var present (disabled in dev)Infra
+Model versioning: model_registry table + models/{name}/{version}/ in MinIOMLInfra
+Seed data loads only on dev profileDBInfra

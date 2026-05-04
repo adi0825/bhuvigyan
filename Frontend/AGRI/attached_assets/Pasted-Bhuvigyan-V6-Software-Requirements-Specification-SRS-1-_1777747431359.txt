@@ -1,0 +1,774 @@
+Bhuvigyan V6 Software Requirements Specification (SRS)
+1. Document Control
+1.1 Document Title
+Bhuvigyan V6 Software Requirements Specification (SRS)
+
+1.2 Product Name
+Bhuvigyan V6 — Resilient National Fraud Intelligence Platform
+
+1.3 Purpose
+This document defines the complete functional, technical, operational, deployment, security, and scalability requirements for Version 6 of the Bhuvigyan PMFBY fraud detection platform. The system is centered on UDLRN, state-aware land verification, satellite-based crop validation, AI-driven fraud scoring, evidence generation, and automated verdict routing for crop insurance claims under PMFBY.
+​
+
+1.4 Scope
+Bhuvigyan V6 is intended to reduce PMFBY fraud by replacing manual, bribery-prone verification with an automated workflow that combines land-record validation, multi-satellite evidence, fraud analytics, and configurable decision routing. The source concept targets 30-second fraud verdicts, 87 percent AI-powered fraud detection, reduced physical CCE visits, and a major reduction in fraudulent payouts through unbribable satellite verification and state-specific rules.
+​
+
+1.5 Intended Audience
+Product owners
+
+Solution architects
+
+Backend and frontend engineers
+
+ML engineers
+
+DevOps engineers
+
+QA engineers
+
+Government stakeholders
+
+Insurers and implementation partners
+
+2. System Overview
+2.1 Business Problem
+PMFBY fraud persists because claim verification depends on manual gatekeepers, fragmented state land systems, and weak automated validation. The concept document identifies fraud mechanisms such as false RTC crop changes, fabricated CCE entries, area inflation, non-agricultural land misclassification, CSC bulk filing fraud, and duplicate or cross-state abuse.
+​
+
+2.2 Product Vision
+Bhuvigyan V6 shall provide a unified digital platform that accepts UDLRN-based claim intake, routes each claim through the correct state land-record integration, retrieves and analyzes satellite evidence, engineers fraud features, applies AI scoring, generates explainable evidence, and assigns a claim verdict through configurable decision thresholds.
+​
+
+2.3 Core Outcome Targets
+The product shall be designed around the following benchmark goals defined in the project brief.
+​
+
+Metric	Existing process	Bhuvigyan target
+Verification time	45–120 days 
+​	30 seconds 
+​
+Cost per claim	500 manual 
+​	50 automated 
+​
+Fraud detection rate	40 manual 
+​	87 AI-powered 
+​
+CCE physical visits	100% of claims 
+​	30% high-risk only 
+​
+3. Product Goals
+Bhuvigyan V6 shall achieve the following product goals:
+
+Provide a dual-run system that works in Docker mode and in split local mode with equivalent business functionality.
+
+Implement complete UDLRN-centered claim processing.
+
+Support state-aware fraud logic for at least Maharashtra, Karnataka, Rajasthan, Telangana, Punjab, and Uttar Pradesh.
+​
+
+Implement multi-satellite fusion using Sentinel-2, Sentinel-1, and Landsat as baseline operational sources, with future readiness for Resourcesat-2A and NISAR.
+​
+
+Generate explainable, auditable, court-defensible decisions with evidence files.
+​
+
+Support a full workflow for farmers, CSCs, officers, insurers, and administrators.
+
+Remain operational under partial dependency failure by means of fallback mode, retries, caching, and outbox patterns.
+
+4. Definitions and Abbreviations
+Term	Definition
+PMFBY	Pradhan Mantri Fasal Bima Yojana 
+​
+UDLRN	Unified Digital Land Records Number, a master key for farmer and parcel identity across services 
+​
+ULPIN	Unique Land Parcel Identification Number inspiration for UDLRN 
+​
+CCE	Crop Cutting Experiment 
+​
+RTC	Record of Rights, Tenancy and Crops; state land record terminology used in Karnataka context 
+​
+CSC	Common Service Centre / operator-assisted filing channel 
+​
+NDVI	Normalized Difference Vegetation Index used for crop health analysis 
+​
+SAR	Synthetic Aperture Radar for cloud-penetrating monitoring 
+​
+DLT	Dead Letter Topic
+SLA	Service Level Agreement
+5. Product Perspective
+5.1 System Positioning
+Bhuvigyan V6 shall function as a national fraud-control platform layered on top of state land systems, crop insurance workflows, satellite evidence services, and insurer decision processes. The concept already frames the backend as a dynamic State Routing Engine because no single land API works across all states.
+​
+
+5.2 High-Level Workflow
+The end-to-end flow shall follow the concept architecture below: claim ingestion, state router activation, land record verification, satellite retrieval, fraud feature engineering, AI ensemble scoring, evidence generation, verdict routing, and immutable audit logging.
+​
+
+5.3 User Classes
+Farmer: files and tracks claims.
+
+CSC operator: assists farmers and may submit claims on their behalf.
+
+Field officer / inspector: handles review and mandatory field visit cases.
+
+Insurer user: monitors claims, evidence, and payout-related workflows.
+
+Admin user: manages rules, thresholds, health, overrides, and system configuration.
+
+System operator / DevOps: manages infrastructure, deployment mode, observability, and recovery.
+
+6. Operating Modes
+6.1 Mode A — Docker Integrated Mode
+The system shall support a fully containerized mode with frontend, backend, and infrastructure services started using Docker Compose.
+
+6.2 Mode B — Split Local Fallback Mode
+The system shall support a non-Docker mode in which:
+
+Spring Boot services run independently.
+
+Angular apps run independently.
+
+Python services run independently.
+
+PostgreSQL and Redis are required.
+
+Kafka, Cassandra, and MinIO are optional and may be replaced by fallback components.
+
+6.3 Functional Equivalence Requirement
+Both modes shall preserve the same business workflows, user journeys, APIs, scoring logic, rule evaluation, and decision outcomes, except where explicitly downgraded by dependency fallback.
+
+6.4 Degraded Operation Rules
+If Kafka is unavailable, event publishing shall fall back to a PostgreSQL outbox queue.
+
+If Cassandra is unavailable, audit writes shall be stored in a fallback PostgreSQL audit table.
+
+If MinIO is unavailable, evidence files shall be stored on a local filesystem or alternative object path while preserving metadata links.
+
+If a state API is unavailable, the system shall use cached data if within TTL; otherwise it shall move the claim to a review or satellite-first path.
+
+If satellite retrieval fails, the claim shall continue with lower-confidence non-satellite checks and be sent for manual review where required.
+
+7. Functional Requirements
+7.1 Identity and Access Management
+FR-01 Authentication
+The system shall authenticate users via mobile OTP, password, role-based admin login, or configured identity provider.
+
+FR-02 Dev Mode Authentication
+In development mode, the system shall accept a universal OTP value of 123456 to simplify testing.
+
+FR-03 Authorization
+The system shall support role-based access control for farmer, CSC, officer, insurer, admin, and system operator roles.
+
+FR-04 Session Management
+The system shall issue JWT access tokens and refresh tokens with configurable expiry values.
+
+FR-05 Permission Enforcement
+Every protected API and UI route shall enforce permission-based access.
+
+7.2 UDLRN Management
+FR-06 UDLRN Resolution
+The system shall accept a UDLRN and resolve linked parcel, owner, location, policy, and claim history data.
+​
+
+FR-07 UDLRN Structure
+The system shall support a structured UDLRN format containing a state prefix and parcel linkage logic consistent with the concept of state-based routing.
+​
+
+FR-08 UDLRN Auto-Population
+At claim filing, the system shall auto-populate farmer and parcel fields from UDLRN-derived verified data to reduce manual entry.
+​
+
+FR-09 UDLRN History
+The system shall maintain UDLRN history, including changes in ownership linkage, parcel status, blacklist status, and fraud flags.
+
+FR-10 Cross-State Fraud Detection
+The system shall detect suspicious usage of the same UDLRN across multiple states or overlapping claims.
+​
+
+7.3 Farmer Registration and Profile
+FR-11 Farmer Onboarding
+The system shall allow farmers to register by identity, mobile, bank account, and land linkage.
+
+FR-12 Profile Management
+The system shall allow farmers to update profile attributes subject to audit logging.
+
+FR-13 Land Portfolio View
+The farmer portal shall display linked parcels, claim history, and status indicators.
+
+7.4 Claim Intake
+FR-14 Claim Creation
+The system shall create a claim draft when a farmer or CSC starts a new application.
+
+FR-15 Assisted Filing
+The system shall support CSC-assisted claim filing and record operator identity for every assisted action.
+
+FR-16 Input Validation
+The system shall validate season, crop type, sowing period, parcel eligibility, policy duplication, and mandatory fields before claim submission.
+
+FR-17 Document Upload
+The system shall support upload of supporting documents and images for claims.
+
+FR-18 Draft Resume
+Users shall be able to save and resume a draft claim.
+
+FR-19 Duplicate Prevention
+The system shall prevent duplicate active claims on the same parcel and season based on policy rules.
+​
+
+7.5 State Routing Engine
+FR-20 State Detection
+The system shall determine the target land adapter from the UDLRN state prefix or related parcel metadata.
+​
+
+FR-21 Dynamic Routing
+The system shall route each claim to the correct state land-record adapter and rule pack.
+​
+
+FR-22 Adapter Abstraction
+The system shall expose a standard adapter interface for parcel fetch, ownership fetch, mutation history, land-use lookup, and crop declaration retrieval.
+
+FR-23 Adapter Confidence
+Each adapter response shall include freshness, success, and confidence metadata.
+
+FR-24 Cache Fallback
+The state adapter layer shall support cache-first fallback with configurable TTL in case of temporary API failure. The concept specifically mentions async caching with 90-day TTL as a mitigation for state API downtime.
+​
+
+7.6 State-Specific Fraud Rules
+FR-25 Maharashtra Rules
+The system shall support Maharashtra-specific checks including CSC bulk filing patterns, 8A/owner-policy cross-checks, non-agricultural land rejection, and pre-sowing barren NDVI rejection.
+​
+
+FR-26 Karnataka Rules
+The system shall support Karnataka-specific checks including recent RTC mutation alerts, NDVI vs. claimed damage contradiction, and non-agricultural reclassification freeze logic.
+​
+
+FR-27 Telangana Rules
+The system shall support Telangana-specific boundary and GPS-based land verification checks.
+​
+
+FR-28 Punjab Rules
+The system shall support Punjab-specific Khasra deduplication and tenant mismatch checks.
+​
+
+FR-29 Uttar Pradesh Rules
+The system shall support UP-specific multi-policy detection and bank clustering alerts.
+​
+
+FR-30 Rajasthan Rules
+The system shall support Rajasthan-specific district heatmap escalations, seasonal mismatch checks, and historically barren-land rejection logic.
+​
+
+7.7 Satellite Fusion Engine
+FR-31 Satellite Sources
+The system shall support satellite retrieval from Sentinel-2, Sentinel-1, and Landsat operationally, with future adapters for Resourcesat-2A and NISAR.
+​
+
+FR-32 True Color Output
+The system shall generate a true-color plot image for a parcel where imagery is available.
+​
+
+FR-33 NDVI Timeline
+The system shall compute NDVI timeline metrics for the parcel.
+​
+
+FR-34 Loss Map
+The system shall compute a loss map using sowing-date and claim-date vegetation differences.
+​
+
+FR-35 Historical Baseline
+The system shall maintain a 10-year historical vegetation or land-use baseline for fraud checks.
+​
+
+FR-36 Cloud Fallback
+When optical imagery is insufficient, the system shall use SAR-based fallback checks for monsoon or cloud-covered periods.
+​
+
+FR-37 Geospatial Cache
+The system shall cache recent geospatial outputs to reduce recomputation and improve resilience.
+
+7.8 Feature Engineering and AI Scoring
+FR-38 Feature Generation
+The system shall generate fraud features from geospatial, temporal, operator, bank, historical, and state-rule inputs. The concept specifies 47 engineered features.
+​
+
+FR-39 Multi-Model Ensemble
+The system shall apply a scoring ensemble composed of crop classification, anomaly detection, and timeline validation models.
+​
+
+FR-40 Weighted Risk Score
+The ensemble shall produce a weighted fraud risk score from 0 to 100.
+​
+
+FR-41 Explainability
+The scoring output shall include human-readable explanations and rule hits.
+
+FR-42 Model Versioning
+Every score shall be tagged with model version metadata.
+
+FR-43 Drift Monitoring
+The system shall detect scoring drift across crop type, district, season, and state segments.
+
+7.9 Decision Engine
+FR-44 Decision Thresholds
+By default, the system shall support the threshold bands specified in the concept: 0–30 auto-approve, 31–60 officer review, 61–80 mandatory field visit, and 81–100 auto-reject with escalation.
+​
+
+FR-45 Configurable Profiles
+Thresholds shall be configurable by state, crop season, or policy profile.
+
+FR-46 Hard Rule Overrides
+The system shall support hard overrides such as instant reject for non-agricultural land or blocked operators.
+
+FR-47 Manual Override
+Authorized officers or admins shall be able to override a verdict with mandatory reason capture and audit logging.
+
+FR-48 Appeal Workflow
+The system shall support claim appeals and re-evaluation.
+
+7.10 Evidence and Reporting
+FR-49 Evidence Package
+The system shall generate a PDF evidence package containing true-color imagery, NDVI timeline, loss map, score rationale, and metadata, as stated in the concept.
+​
+
+FR-50 Traceability
+The evidence package shall include trace ID, timestamps, and decision references.
+
+FR-51 Re-Generation
+Evidence packages shall be regenerable on demand.
+
+FR-52 Download and Sharing
+Authorized users shall be able to view and download evidence artifacts.
+
+7.11 Audit and Forensics
+FR-53 Immutable Event Logging
+The system shall log every critical system and user event with actor, timestamp, payload, and entity linkage. The concept explicitly requires court-admissible immutable logging.
+​
+
+FR-54 Audit Replay
+The system shall support replay of claim event history by trace ID or claim ID.
+
+FR-55 Integrity Verification
+Evidence files shall support integrity verification using content hash metadata.
+
+FR-56 Non-Blocking Audit
+Audit failure shall never block the core claim pipeline.
+
+7.12 Notification and Messaging
+FR-57 Notification Triggers
+The system shall notify relevant users on claim filing, review request, field visit assignment, verdict, appeal updates, and payout-related events.
+
+FR-58 Channel Support
+The system shall support in-app, SMS, WhatsApp, and email channels where configured.
+
+FR-59 Dev Mode Delivery
+In development mode, external messages may be written to a database-backed notification store rather than an external provider.
+
+7.13 Review and Field Visit Workflow
+FR-60 Review Queue
+Claims in review status shall be assignable to officers.
+
+FR-61 Field Visit Assignment
+Claims in the mandatory visit band shall create field visit tasks.
+​
+
+FR-62 Geo-Tagged Evidence
+Field officers shall be able to upload geo-tagged images and remarks.
+
+FR-63 Sync-Later Support
+The officer workflow shall support offline capture with later synchronization where feasible.
+
+7.14 Analytics and Admin Control
+FR-64 Heatmaps and Risk Dashboards
+The system shall show district, operator, claim, and rule-based fraud trends consistent with the concept’s district heatmap approach.
+​
+
+FR-65 Rule Management
+Admins shall be able to enable, disable, and configure state rule packs.
+
+FR-66 Dependency Dashboard
+Admins shall be able to monitor health of land adapters, satellite services, object storage, event bus, and background jobs.
+
+FR-67 Mode Management
+Admins shall be able to view current operating mode and degraded-fallback status.
+
+8. External Interface Requirements
+8.1 User Interfaces
+The system shall provide five portals:
+
+Farmer portal
+
+CSC portal
+
+Officer portal
+
+Insurer portal
+
+Admin portal
+
+Each portal shall include loading, empty, error, validation, and degraded-mode states.
+
+8.2 API Interfaces
+The platform shall expose REST APIs under grouped namespaces such as:
+
+/auth/*
+
+/farmers/*
+
+/udlrn/*
+
+/claims/*
+
+/land/*
+
+/satellite/*
+
+/scoring/*
+
+/evidence/*
+
+/notifications/*
+
+/admin/*
+
+/analytics/*
+
+/audit/*
+
+/system/*
+
+8.3 Hardware and Sensor Interfaces
+No direct hardware dependency is required, but mobile devices with camera and GPS shall be supported for field officer evidence capture.
+
+8.4 Communications Interfaces
+The system shall communicate over HTTPS for APIs and may use Kafka or an alternative outbox-poller mechanism for internal event-driven workflows.
+
+9. Data Requirements
+9.1 Master Data Domains
+The system shall maintain data for:
+
+users and roles
+
+farmers and CSCs
+
+UDLRN master and parcel linkage
+
+land ownership history
+
+land-use history
+
+mutation history
+
+bank and policy data
+
+claim workflow data
+
+feature snapshots
+
+scoring outputs
+
+decisions and appeals
+
+audit events
+
+evidence files
+
+rule profiles
+
+district and operator aggregates
+
+9.2 Mandatory UDLRN Fields
+The source brief defines UDLRN as containing land identity, ownership, financial linkage, crop history, insurance history, satellite baseline, and fraud flags, and V6 shall preserve those categories in its canonical model.
+​
+
+9.3 Retention
+The system shall support configurable retention policies, with long-term retention for legal and audit artifacts.
+
+10. Non-Functional Requirements
+10.1 Performance
+Claim intake requests shall respond within 2 seconds excluding long-running evidence jobs.
+
+Low-risk automated verdicts shall target a total end-to-end time of approximately 30 seconds under normal conditions, matching the source concept.
+​
+
+Cached parcel lookups shall return within 1 second in nominal conditions.
+
+PDF generation should complete within 10 seconds for standard cases.
+
+10.2 Availability
+The platform shall target 99.5 percent availability in pilot mode.
+
+The system shall degrade gracefully on single-service failure.
+
+10.3 Scalability
+The concept roadmap targets 100K-claim pilot readiness and later multi-million claim processing, and V6 shall be architected with horizontal scaling, async processing, and partitionable workloads to support that path.
+​
+
+10.4 Reliability
+No single audit, notification, or analytics failure shall block claim progression.
+
+The system shall support retries with exponential backoff.
+
+Idempotent request handling shall be used for claim creation and event processing.
+
+10.5 Security
+All data in transit shall use TLS.
+
+Sensitive data at rest shall be encrypted where applicable.
+
+Role-based access control shall apply to all protected workflows.
+
+Admin overrides shall always be audited.
+
+Signed URLs shall be used for secured file access.
+
+10.6 Maintainability
+All services shall expose health and readiness endpoints.
+
+Configuration shall be environment-driven.
+
+Common libraries shall be shared for auth, event schema, and DTOs.
+
+10.7 Observability
+Structured logs shall include trace IDs.
+
+Metrics shall be exported for dashboards and alerting.
+
+Queue lag, adapter latency, evidence generation time, and scoring latency shall be measurable.
+
+10.8 Accessibility
+Portals shall support keyboard navigation.
+
+All interactive elements shall have accessible labels.
+
+Mobile-first responsive layouts shall support low-bandwidth and touch-device use.
+
+11. Technology Requirements
+11.1 Backend
+Spring Boot microservices for core business services.
+
+Python-based services for geospatial and ML tasks where required.
+
+PostgreSQL with PostGIS for transactional and spatial storage.
+
+Redis for cache and short-lived state.
+
+Kafka for async messaging where enabled.
+
+Cassandra or equivalent append-only store for immutable audit where enabled.
+
+MinIO or compatible object storage for artifacts.
+
+11.2 Frontend
+Angular multi-portal frontend with shared component libraries.
+
+11.3 Infrastructure
+Docker Compose support for integrated environment.
+
+Local process startup scripts for split mode.
+
+Environment-specific configuration profiles.
+
+12. System Architecture Requirements
+12.1 Service List
+The minimum V6 service set shall include:
+
+API gateway
+
+Auth service
+
+Farmer service
+
+Claims service
+
+Land adapter service
+
+Satellite service
+
+Feature engineering service
+
+Fraud scoring service
+
+Evidence/report service
+
+Notification service
+
+CCE/field visit service
+
+Admin/rules service
+
+Audit service
+
+Analytics service
+
+Scheduler service
+
+12.2 Event Topics / Queue Contracts
+The platform should support workflow events such as:
+
+claim.pre-validation
+
+claim.filed
+
+claim.land.verified
+
+claim.bank.verified
+
+satellite.job.requested
+
+satellite.job.completed
+
+claim.scored
+
+claim.review.queued
+
+claim.cce.assigned
+
+claim.auto.rejected
+
+claim.approved
+
+claim.rejected
+
+12.3 Fallback Outbox
+If the message broker is unavailable, events shall be persisted to event_outbox and replayed by a scheduler.
+
+13. Business Rules
+13.1 Default Decision Bands
+The default score bands shall be as follows.
+​
+
+Score	Action
+0–30	Auto-approve 
+​
+31–60	Officer review 
+​
+61–80	Mandatory field visit 
+​
+81–100	Auto-reject and escalation 
+​
+13.2 NDVI Reference Guidance
+The concept defines example NDVI interpretation ranges that V6 may use as rule inputs or explainability cues, including barren/no crop, stressed crop, healthy crop, and fraud contradiction cases.
+​
+
+13.3 Hard Fraud Indicators
+Examples of hard or near-hard indicators include:
+
+Non-agricultural land presented as agricultural.
+​
+
+Recent suspicious mutation before claim.
+​
+
+Same bank account linked across abnormal clusters of claims in certain state contexts.
+​
+
+Same land or UDLRN used in overlapping duplicate policies.
+​
+
+14. Deployment Requirements
+14.1 Environment Profiles
+The system shall support dev, test, stage, prod, and local profiles.
+
+14.2 Startup Requirements
+Every service shall support liveness and readiness checks and must be capable of waiting for critical dependencies during startup.
+
+14.3 Seed Data
+Development environments shall support demo seed data for users, parcels, claims, and dashboards.
+
+14.4 Local Start Scripts
+The project shall provide one-command startup scripts for split local mode.
+
+15. Testing Requirements
+15.1 Automated Testing
+The product shall include:
+
+unit tests
+
+integration tests
+
+adapter tests
+
+API contract tests
+
+end-to-end portal tests
+
+rule validation tests
+
+scoring regression tests
+
+degraded-mode tests
+
+15.2 Scenario Tests
+The system shall include scenario coverage for:
+
+legitimate low-risk claim
+
+CSC bulk fraud attempt
+
+suspicious RTC mutation case
+
+phantom farm / barren baseline claim
+
+duplicate policy claim
+
+bank clustering fraud signal
+
+state API outage
+
+satellite outage
+
+Kafka outage fallback
+
+local split-mode operation
+
+16. Acceptance Criteria
+Bhuvigyan V6 shall be considered acceptable when all of the following are true:
+
+All five portals are usable in both deployment modes.
+
+Core claim flow executes end-to-end from intake to verdict.
+
+State-aware rules for the six defined states are operational.
+​
+
+Satellite evidence generation works with operational sources and fallback logic.
+
+Score and verdict explanations are visible and auditable.
+
+Audit trail remains available even when the primary audit store fails.
+
+Docker mode and split local mode produce equivalent business outcomes.
+
+Health, logs, metrics, and recovery tools are available.
+
+17. Future Compatibility Requirements
+The source roadmap includes future expansion for 100K pilot scale, disaster bulk-approval, NISAR integration, yield forecasting, PM-KISAN integration, carbon credit verification, and national-scale deployment across all states, so V6 shall preserve extension points for these capabilities rather than hard-code narrow pilot assumptions.
+​
+
+18. Risks and Mitigations
+Risk	Impact	Mitigation
+Risk	Impact	Mitigation
+State API downtime	Verification stalls	Cache-first routing and satellite-first fallback 
+​
+Monsoon cloud cover	Optical imagery gaps	Sentinel-1 SAR fallback 
+​
+Small plot resolution limits	False classification risk	High-res/ISRO expansion path and sub-pixel improvements 
+​
+Manual override abuse	Corruption risk	Mandatory audit logging and reason codes
+Kafka/Cassandra/MinIO outages	Pipeline interruption	Outbox, fallback audit, local artifact storage
+Drift in ML model behavior	Reduced trust	Model registry, monitoring, human review loop
+19. Assumptions
+State data access agreements will be available for configured adapters.
+
+Satellite data retrieval is permitted and operational under approved access modes.
+
+PMFBY business workflows remain broadly compatible with the described intake and verification model.
+
+Pilot environments may use mocked integrations where production providers are unavailable.
+
+20. Conclusion
+Bhuvigyan V6 is specified as a resilient, auditable, state-aware crop insurance fraud intelligence platform built around UDLRN, multi-satellite verification, explainable AI scoring, and configurable decision automation. Its defining release requirement is not only advanced fraud detection, but dependable operation under real deployment stress through Docker mode, split local mode, and graceful subsystem fallback while preserving the core 30-second verdict vision and national expansion path described in the source concept.
+​

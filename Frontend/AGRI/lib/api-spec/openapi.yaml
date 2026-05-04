@@ -1,0 +1,1548 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Bhuvigyan PMFBY Fraud Detection API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: farmer-auth
+    description: Farmer authentication
+  - name: admin-auth
+    description: Admin/Officer authentication
+  - name: farmer
+    description: Farmer profile and land
+  - name: claims
+    description: Claim filing and management
+  - name: admin
+    description: Admin operations
+  - name: location
+    description: Location cascading dropdowns
+  - name: dashboard
+    description: Dashboard statistics
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /v1/farmer/register:
+    post:
+      operationId: farmerRegister
+      tags: [farmer-auth]
+      summary: Register a new farmer and generate UDLRN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FarmerRegisterBody"
+      responses:
+        "201":
+          description: Registration initiated — OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FarmerRegisterResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/farmer/verify-otp:
+    post:
+      operationId: farmerVerifyOtp
+      tags: [farmer-auth]
+      summary: Verify OTP and get tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyOtpBody"
+      responses:
+        "200":
+          description: Verified — tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FarmerAuthResponse"
+
+  /v1/farmer/login:
+    post:
+      operationId: farmerLogin
+      tags: [farmer-auth]
+      summary: Farmer login (send OTP)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FarmerLoginBody"
+      responses:
+        "200":
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/farmer/profile:
+    get:
+      operationId: getFarmerProfile
+      tags: [farmer]
+      summary: Get authenticated farmer's profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Farmer profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FarmerProfileResponse"
+
+  /v1/farmer/land:
+    get:
+      operationId: getFarmerLand
+      tags: [farmer]
+      summary: Get farmer's UDLRN land details
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Land details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LandDetailsResponse"
+
+  /v1/farmer/notifications:
+    get:
+      operationId: getFarmerNotifications
+      tags: [farmer]
+      summary: Get farmer notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Notifications list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationsListResponse"
+
+  /v1/admin/login:
+    post:
+      operationId: adminLogin
+      tags: [admin-auth]
+      summary: Admin login with email + password + TOTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginBody"
+      responses:
+        "200":
+          description: Admin authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuthResponse"
+
+  /v1/admin/officers:
+    get:
+      operationId: listOfficers
+      tags: [admin]
+      summary: List all officers (SUPER_ADMIN only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Officers list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfficersListResponse"
+    post:
+      operationId: createOfficer
+      tags: [admin]
+      summary: Create new officer (SUPER_ADMIN only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOfficerBody"
+      responses:
+        "201":
+          description: Officer created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfficerResponse"
+
+  /v1/admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [dashboard]
+      summary: Get dashboard statistics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStatsResponse"
+
+  /v1/admin/review-queue:
+    get:
+      operationId: getReviewQueue
+      tags: [admin]
+      summary: Get claims pending officer review
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: districtId
+          in: query
+          schema:
+            type: string
+        - name: minScore
+          in: query
+          schema:
+            type: integer
+        - name: maxScore
+          in: query
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Review queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewQueueResponse"
+
+  /v1/admin/claims/{id}:
+    get:
+      operationId: getClaimDetail
+      tags: [admin]
+      summary: Get full claim detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Claim detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+
+  /v1/admin/claims/{id}/approve:
+    post:
+      operationId: approveClaim
+      tags: [admin]
+      summary: Approve a claim
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimActionBody"
+      responses:
+        "200":
+          description: Claim approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/admin/claims/{id}/reject:
+    post:
+      operationId: rejectClaim
+      tags: [admin]
+      summary: Reject a claim
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimActionBody"
+      responses:
+        "200":
+          description: Claim rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/admin/claims/{id}/schedule-cce:
+    post:
+      operationId: scheduleClaimCce
+      tags: [admin]
+      summary: Schedule CCE field visit
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleCceBody"
+      responses:
+        "200":
+          description: CCE visit scheduled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/admin/claims/{id}/fir-alert:
+    post:
+      operationId: firAlertClaim
+      tags: [admin]
+      summary: Send FIR alert to District Collector
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimActionBody"
+      responses:
+        "200":
+          description: FIR alert sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/admin/heatmap:
+    get:
+      operationId: getFraudHeatmap
+      tags: [admin]
+      summary: Fraud heatmap data
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: stateCode
+          in: query
+          schema:
+            type: string
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: Heatmap data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeatmapResponse"
+
+  /v1/admin/udlrn/{udlrn}:
+    get:
+      operationId: getUdlrnProfile
+      tags: [admin]
+      summary: Get full UDLRN profile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: udlrn
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: UDLRN profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UdlrnProfileResponse"
+
+  /v1/admin/udlrn/{udlrn}/freeze:
+    post:
+      operationId: freezeUdlrn
+      tags: [admin]
+      summary: Freeze a UDLRN (DC only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: udlrn
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FreezeUdlrnBody"
+      responses:
+        "200":
+          description: UDLRN frozen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/admin/audit-log:
+    get:
+      operationId: getAuditLog
+      tags: [admin]
+      summary: Search audit log
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: udlrn
+          in: query
+          schema:
+            type: string
+        - name: claimId
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogResponse"
+
+  /v1/claims/file:
+    post:
+      operationId: fileClaim
+      tags: [claims]
+      summary: File a new crop insurance claim
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileClaimBody"
+      responses:
+        "201":
+          description: Claim filed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileClaimResponse"
+
+  /v1/claims/my-claims:
+    get:
+      operationId: getMyClaims
+      tags: [claims]
+      summary: Get authenticated farmer's claims
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: My claims
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyClaimsResponse"
+
+  /v1/claims/status/{id}:
+    get:
+      operationId: getClaimStatus
+      tags: [claims]
+      summary: Get claim status (farmer view)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Claim status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimStatusResponse"
+
+  /v1/claims/appeal/{id}:
+    post:
+      operationId: appealClaim
+      tags: [claims]
+      summary: Appeal a rejected claim
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppealBody"
+      responses:
+        "201":
+          description: Appeal submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/location/states:
+    get:
+      operationId: listStates
+      tags: [location]
+      summary: List all states
+      responses:
+        "200":
+          description: States list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatesListResponse"
+
+  /v1/location/districts:
+    get:
+      operationId: listDistricts
+      tags: [location]
+      summary: List districts by state
+      parameters:
+        - name: stateCode
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Districts list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistrictsListResponse"
+
+  /v1/location/taluks:
+    get:
+      operationId: listTaluks
+      tags: [location]
+      summary: List taluks by district
+      parameters:
+        - name: districtId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Taluks list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaluksListResponse"
+
+  /v1/location/hoblis:
+    get:
+      operationId: listHoblis
+      tags: [location]
+      summary: List hoblis by taluk
+      parameters:
+        - name: talukId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Hoblis list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HoblisListResponse"
+
+  /v1/location/villages:
+    get:
+      operationId: listVillages
+      tags: [location]
+      summary: List villages by hobli
+      parameters:
+        - name: hobliId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Villages list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VillagesListResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+      required:
+        - success
+        - error
+
+    MessageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            message:
+              type: string
+      required:
+        - success
+        - data
+
+    FarmerRegisterBody:
+      type: object
+      properties:
+        mobile:
+          type: string
+        fullName:
+          type: string
+        stateCode:
+          type: string
+        districtId:
+          type: string
+        talukId:
+          type: string
+        hobliId:
+          type: string
+        villageId:
+          type: string
+        surveyNumber:
+          type: string
+        payoutAccountNo:
+          type: string
+        payoutIfsc:
+          type: string
+        preferredLanguage:
+          type: string
+      required:
+        - mobile
+        - fullName
+        - stateCode
+        - districtId
+        - talukId
+        - hobliId
+        - villageId
+        - surveyNumber
+        - payoutAccountNo
+        - payoutIfsc
+
+    FarmerRegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            farmerId:
+              type: string
+            message:
+              type: string
+            devOtp:
+              type: string
+      required:
+        - success
+        - data
+
+    VerifyOtpBody:
+      type: object
+      properties:
+        mobile:
+          type: string
+        otp:
+          type: string
+      required:
+        - mobile
+        - otp
+
+    FarmerLoginBody:
+      type: object
+      properties:
+        mobile:
+          type: string
+      required:
+        - mobile
+
+    FarmerAuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+            refreshToken:
+              type: string
+            farmer:
+              $ref: "#/components/schemas/FarmerSummary"
+            udlrn:
+              type: string
+      required:
+        - success
+        - data
+
+    FarmerSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        mobile:
+          type: string
+        fullName:
+          type: string
+        preferredLanguage:
+          type: string
+        isBlacklisted:
+          type: boolean
+      required:
+        - id
+        - mobile
+        - fullName
+
+    FarmerProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/FarmerSummary"
+      required:
+        - success
+        - data
+
+    LandDetailsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            udlrn:
+              type: string
+            landOwnerName:
+              type: string
+            landAreaHa:
+              type: number
+            landUseType:
+              type: string
+            declaredCrop:
+              type: string
+            centroidLat:
+              type: number
+            centroidLng:
+              type: number
+            isFrozen:
+              type: boolean
+            plotPolygonWkt:
+              type: string
+      required:
+        - success
+        - data
+
+    NotificationsListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationItem"
+      required:
+        - success
+        - data
+
+    NotificationItem:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        channel:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - message
+        - channel
+
+    AdminLoginBody:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        totpCode:
+          type: string
+      required:
+        - email
+        - password
+        - totpCode
+
+    AdminAuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+            refreshToken:
+              type: string
+            officer:
+              $ref: "#/components/schemas/OfficerSummary"
+      required:
+        - success
+        - data
+
+    OfficerSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+        stateCode:
+          type: string
+        districtId:
+          type: string
+        jurisdiction:
+          type: object
+      required:
+        - id
+        - email
+        - fullName
+        - role
+
+    OfficersListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/OfficerSummary"
+      required:
+        - success
+        - data
+
+    OfficerResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/OfficerSummary"
+      required:
+        - success
+        - data
+
+    CreateOfficerBody:
+      type: object
+      properties:
+        email:
+          type: string
+        fullName:
+          type: string
+        mobile:
+          type: string
+        role:
+          type: string
+        stateCode:
+          type: string
+        districtId:
+          type: string
+        talukId:
+          type: string
+      required:
+        - email
+        - fullName
+        - role
+
+    DashboardStatsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/DashboardStats"
+      required:
+        - success
+        - data
+
+    DashboardStats:
+      type: object
+      properties:
+        totalClaimsToday:
+          type: integer
+        autoApprovedToday:
+          type: integer
+        underReviewToday:
+          type: integer
+        fraudRejectedToday:
+          type: integer
+        amountSavedToday:
+          type: number
+        totalClaimsAllTime:
+          type: integer
+        approvalRate:
+          type: number
+        avgFraudScore:
+          type: number
+        pendingReview:
+          type: integer
+        pendingCce:
+          type: integer
+        recentClaims:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClaimSummary"
+        verdictBreakdown:
+          type: object
+          properties:
+            autoApproved:
+              type: integer
+            officerReview:
+              type: integer
+            cceVisit:
+              type: integer
+            autoRejected:
+              type: integer
+      required:
+        - totalClaimsToday
+        - autoApprovedToday
+        - underReviewToday
+        - fraudRejectedToday
+        - amountSavedToday
+
+    ClaimSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        claimNumber:
+          type: string
+        udlrn:
+          type: string
+        farmerName:
+          type: string
+        districtId:
+          type: string
+        declaredCrop:
+          type: string
+        damageType:
+          type: string
+        fraudScore:
+          type: number
+        status:
+          type: string
+        filedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - claimNumber
+        - status
+
+    ReviewQueueResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClaimSummary"
+            total:
+              type: integer
+            page:
+              type: integer
+            limit:
+              type: integer
+      required:
+        - success
+        - data
+
+    ClaimDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/ClaimDetail"
+      required:
+        - success
+        - data
+
+    ClaimDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        claimNumber:
+          type: string
+        udlrn:
+          type: string
+        farmerId:
+          type: string
+        farmerName:
+          type: string
+        farmerMobile:
+          type: string
+        declaredCrop:
+          type: string
+        damageType:
+          type: string
+        sowingDate:
+          type: string
+        damageDate:
+          type: string
+        claimAmountRequested:
+          type: number
+        approvedAmount:
+          type: number
+        status:
+          type: string
+        fraudScore:
+          type: number
+        fraudConfidence:
+          type: number
+        fraudFlags:
+          type: array
+          items:
+            type: string
+        flagBreakdown:
+          type: object
+        ndviSowing:
+          type: number
+        ndviClaim:
+          type: number
+        ndviLossPct:
+          type: number
+        trueColorUrl:
+          type: string
+        ndviMapUrl:
+          type: string
+        lossMapUrl:
+          type: string
+        ndviTimeline:
+          type: array
+          items:
+            type: object
+        evidencePdfUrl:
+          type: string
+        landDetails:
+          $ref: "#/components/schemas/LandDetails"
+        auditTrail:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        filedAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - claimNumber
+        - status
+
+    LandDetails:
+      type: object
+      properties:
+        landOwnerName:
+          type: string
+        landAreaHa:
+          type: number
+        landUseType:
+          type: string
+        mutationDate:
+          type: string
+        centroidLat:
+          type: number
+        centroidLng:
+          type: number
+        plotPolygonWkt:
+          type: string
+
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        stepName:
+          type: string
+        actorId:
+          type: string
+        actorType:
+          type: string
+        decisionReason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - stepName
+        - createdAt
+
+    ClaimActionBody:
+      type: object
+      properties:
+        reason:
+          type: string
+        notes:
+          type: string
+        approvedAmount:
+          type: number
+      required:
+        - reason
+
+    ScheduleCceBody:
+      type: object
+      properties:
+        inspectorId:
+          type: string
+        dueBy:
+          type: string
+          format: date-time
+        notes:
+          type: string
+      required:
+        - inspectorId
+
+    HeatmapResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeatmapEntry"
+      required:
+        - success
+        - data
+
+    HeatmapEntry:
+      type: object
+      properties:
+        districtId:
+          type: string
+        districtName:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        totalClaims:
+          type: integer
+        fraudClaims:
+          type: integer
+        fraudRate:
+          type: number
+        amountSaved:
+          type: number
+      required:
+        - districtId
+        - totalClaims
+        - fraudRate
+
+    UdlrnProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            udlrn:
+              type: string
+            farmer:
+              $ref: "#/components/schemas/FarmerSummary"
+            land:
+              $ref: "#/components/schemas/LandDetails"
+            claims:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClaimSummary"
+            isFrozen:
+              type: boolean
+            carbonScore:
+              type: number
+      required:
+        - success
+        - data
+
+    FreezeUdlrnBody:
+      type: object
+      properties:
+        reason:
+          type: string
+      required:
+        - reason
+
+    AuditLogResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+      required:
+        - success
+        - data
+
+    FileClaimBody:
+      type: object
+      properties:
+        udlrn:
+          type: string
+        declaredCrop:
+          type: string
+        sowingDate:
+          type: string
+        damageType:
+          type: string
+        damageDate:
+          type: string
+        claimAmountRequested:
+          type: number
+        season:
+          type: string
+        seasonType:
+          type: string
+        insurerCode:
+          type: string
+      required:
+        - udlrn
+        - declaredCrop
+        - sowingDate
+        - damageType
+        - damageDate
+        - claimAmountRequested
+        - season
+        - seasonType
+
+    FileClaimResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            claimId:
+              type: string
+            claimNumber:
+              type: string
+            status:
+              type: string
+            message:
+              type: string
+      required:
+        - success
+        - data
+
+    MyClaimsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClaimSummary"
+      required:
+        - success
+        - data
+
+    ClaimStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/ClaimStatusDetail"
+      required:
+        - success
+        - data
+
+    ClaimStatusDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        claimNumber:
+          type: string
+        status:
+          type: string
+        pipelineStage:
+          type: string
+        declaredCrop:
+          type: string
+        damageType:
+          type: string
+        filedAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+        approvedAmount:
+          type: number
+        rejectionReason:
+          type: string
+        isAppealed:
+          type: boolean
+        dbtStatus:
+          type: string
+      required:
+        - id
+        - claimNumber
+        - status
+
+    AppealBody:
+      type: object
+      properties:
+        appealText:
+          type: string
+      required:
+        - appealText
+
+    StatesListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+      required:
+        - success
+        - data
+
+    DistrictsListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+      required:
+        - success
+        - data
+
+    TaluksListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+      required:
+        - success
+        - data
+
+    HoblisListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+      required:
+        - success
+        - data
+
+    VillagesListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+      required:
+        - success
+        - data
