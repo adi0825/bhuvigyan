@@ -1,6 +1,6 @@
 # Frontend folders (excluded as per requirement)
-frontend/
-bhuvigyan-frontend/
+# frontend/
+# bhuvigyan-frontend/
 
 # Bhuvigyan folders (excluded as per requirement)
 bhuvigyan/
