@@ -1,7 +1,15 @@
 import os
 import json
 import hashlib
+from decimal import Decimal
 from app.redis_client import redis_client
+
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 class SatelliteCache:
@@ -24,7 +32,7 @@ class SatelliteCache:
 
     async def set(self, prefix, value, ttl, *args):
         key = self._key(prefix, *args)
-        await redis_client.setex(key, ttl, json.dumps(value))
+        await redis_client.setex(key, ttl, json.dumps(value, cls=DecimalEncoder))
 
     async def delete_pattern(self, pattern):
         keys = await redis_client.keys(pattern)

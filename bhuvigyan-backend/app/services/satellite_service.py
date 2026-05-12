@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import ee
-    GEE_AVAILABLE = True
+    GEE_AVAILABLE = False  # Force mock mode for now - GEE requires proper credentials
 except ImportError:
     GEE_AVAILABLE = False
 
