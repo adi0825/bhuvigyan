@@ -1,0 +1,52 @@
+{
+  "name": "bhuvigyan-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "framer-motion": "^11.11.0",
+    "axios": "^1.7.7",
+    "recharts": "^2.13.0",
+    "react-hook-form": "^7.53.0",
+    "@hookform/resolvers": "^3.9.0",
+    "zod": "^3.23.8",
+    "react-hot-toast": "^2.4.1",
+    "lucide-react": "^0.446.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.3",
+    "zustand": "^5.0.0",
+    "react-joyride": "^2.5.5",
+    "canvas-confetti": "^1.9.3",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^4.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.11.1",
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "eslint": "^9.11.1",
+    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint-plugin-react-refresh": "^0.4.12",
+    "globals": "^15.10.0",
+    "typescript": "~5.6.2",
+    "typescript-eslint": "^8.9.0",
+    "vite": "^5.4.9",
+    "tailwindcss": "^3.4.14",
+    "postcss": "^8.4.47",
+    "autoprefixer": "^10.4.20",
+    "@types/canvas-confetti": "^1.6.4",
+    "@playwright/test": "^1.48.0",
+    "@types/leaflet": "^1.9.12"
+  }
+}

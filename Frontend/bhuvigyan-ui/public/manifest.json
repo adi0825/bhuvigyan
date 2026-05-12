@@ -1,0 +1,52 @@
+{
+  "name": "Bhuvigyan",
+  "short_name": "Bhuvigyan",
+  "description": "AI-Powered Crop Insurance Platform — PMFBY Fraud Detection & Carbon Credits",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0fdf4",
+  "theme_color": "#1a6b3c",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en-IN",
+  "categories": ["government", "finance", "agriculture"],
+  "icons": [
+    {
+      "src": "/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/images/screenshot-dashboard.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Farmer Dashboard"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Farmer Login",
+      "short_name": "Farmer",
+      "description": "Login as farmer",
+      "url": "/login/farmer",
+      "icons": [{ "src": "/images/icon-192.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Admin Portal",
+      "short_name": "Admin",
+      "description": "Admin dashboard",
+      "url": "/login/admin",
+      "icons": [{ "src": "/images/icon-192.png", "sizes": "96x96" }]
+    }
+  ]
+}
