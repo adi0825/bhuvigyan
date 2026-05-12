@@ -48,27 +48,28 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
     );
   }
 
-  const ndvi = data.ndvi;
-  const ndwi = data.ndwi;
-  const flood = data.sar_flood;
-  const fire = data.fire;
-  const ndviColor = getNdviColor(ndvi.ndvi);
-  const ndviBg = getNdviBg(ndvi.ndvi);
+  const ndvi = (data.ndvi || {}) as any;
+  const ndwi = (data.ndwi || {}) as any;
+  const flood = (data.sar_flood || {}) as any;
+  const fire = (data.fire || {}) as any;
+  const ndviValue = ndvi.ndvi ?? 0;
+  const ndviColor = getNdviColor(ndviValue);
+  const ndviBg = getNdviBg(ndviValue);
 
   const items = [
     {
       icon: Leaf,
       label: 'NDVI',
-      value: ndvi.ndvi.toFixed(2),
-      sub: ndvi.health_label,
+      value: typeof ndviValue === 'number' ? ndviValue.toFixed(2) : 'N/A',
+      sub: ndvi.health_label || 'Unknown',
       color: ndviColor,
       bg: ndviBg,
     },
     {
       icon: Droplets,
       label: 'NDWI',
-      value: ndwi.ndwi.toFixed(2),
-      sub: ndwi.moisture_status,
+      value: typeof ndwi.ndwi === 'number' ? ndwi.ndwi.toFixed(2) : 'N/A',
+      sub: ndwi.moisture_status || ndwi.label || 'Unknown',
       color: '#2563eb',
       bg: '#eff6ff',
     },
@@ -76,15 +77,15 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
       icon: Waves,
       label: 'Flood Risk',
       value: flood.flood_detected ? 'Yes' : 'No',
-      sub: `${Math.round(flood.confidence * 100)}% confidence`,
+      sub: typeof flood.confidence === 'number' ? `${Math.round(flood.confidence * 100)}% confidence` : 'No data',
       color: flood.flood_detected ? '#ef4444' : '#22c55e',
       bg: flood.flood_detected ? '#fef2f2' : '#f0fdf4',
     },
     {
       icon: Flame,
       label: 'Fire Alerts',
-      value: fire.detected ? `${fire.hotspot_count}` : '0',
-      sub: fire.detected ? `${Math.round(fire.closest_distance_km)}km away` : 'Clear',
+      value: fire.detected ? `${fire.hotspot_count ?? 0}` : '0',
+      sub: fire.detected ? `${Math.round(fire.closest_distance_km ?? 0)}km away` : 'Clear',
       color: fire.detected ? '#ef4444' : '#22c55e',
       bg: fire.detected ? '#fef2f2' : '#f0fdf4',
     },
@@ -96,7 +97,7 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
         <div>
           <h3 className="text-lg font-bold text-[#1a1a1a]">Bhumi AI — Live Satellite</h3>
           <p className="text-xs text-[#6b7280]">
-            {ndvi.source} · Scan: {ndvi.scan_date}
+            {ndvi.source || 'Sentinel-2'} · Scan: {ndvi.scan_date || 'N/A'}
             {isCached && <span className="ml-1 text-[#f59e0b]">(cached)</span>}
           </p>
         </div>
