@@ -1,0 +1,10 @@
+-- V22: Seed state adapter configurations
+-- Dependencies: V8
+
+INSERT INTO state_adapters (state_code, name, config_json, active) VALUES
+('MH', 'Maharashtra Default', '{"min_photos":3,"ndvi_threshold":0.35,"area_tolerance_pct":12,"required_fields":["revenue_survey_number","village_code"],"scheme_mappings":{"PMFBY":"PMFBY","Maha_farm_waiver":"STATE_WAIVER"},"routing_rules":{"auto_approve":{"max_amount":50000},"committee_approval":{"min_amount":200000}},"risk_rules":{"geo_cluster_radius_m":150,"weather_mismatch_weight":1.2},"language":"mr"}', TRUE),
+('KA', 'Karnataka Default', '{"min_photos":1,"ndvi_threshold":0.20,"area_tolerance_pct":10,"required_fields":["rtc_number"],"scheme_mappings":{"PMFBY":"PMFBY"},"routing_rules":{"auto_approve":{"max_amount":50000}},"risk_rules":{"geo_cluster_radius_m":200},"language":"kn"}', TRUE),
+('TG', 'Telangana Default', '{"min_photos":1,"ndvi_threshold":0.30,"area_tolerance_pct":10,"required_fields":["aadhar_linkage_status"],"scheme_mappings":{"PMFBY":"PMFBY"},"routing_rules":{"committee_approval":{"min_amount":100000}},"risk_rules":{"geo_cluster_radius_m":200},"language":"te"}', TRUE),
+('PB', 'Punjab Default', '{"min_photos":1,"ndvi_threshold":0.35,"area_tolerance_pct":10,"required_fields":["crop_season"],"scheme_mappings":{"PMFBY":"PMFBY"},"routing_rules":{"auto_approve":{"max_amount":50000}},"risk_rules":{"geo_cluster_radius_m":200,"sar_required_for":"Rabi wheat"},"language":"pa"}', TRUE),
+('UP', 'Uttar Pradesh Default', '{"min_photos":1,"ndvi_threshold":0.28,"area_tolerance_pct":10,"required_fields":["khatauni"],"scheme_mappings":{"PMFBY":"PMFBY"},"routing_rules":{"auto_approve":{"max_amount":50000}},"risk_rules":{"geo_cluster_radius_m":200},"language":"hi"}', TRUE),
+('RJ', 'Rajasthan Default', '{"min_photos":1,"ndvi_threshold":0.25,"area_tolerance_pct":10,"required_fields":["imd_drought_notification_number"],"scheme_mappings":{"PMFBY":"PMFBY"},"routing_rules":{"auto_approve":{"max_amount":50000}},"risk_rules":{"geo_cluster_radius_m":200},"language":"hi"}', TRUE);
