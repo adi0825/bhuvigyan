@@ -43,12 +43,12 @@ export default function FarmerSatellite() {
   // Extract satellite analysis from new response structure
   const analysis = satData?.satellite_analysis || satData;
   const thumbnailB64 = analysis?.thumbnail_b64 || satData?.thumbnail_b64 || thumbnail;
-  const farmInfo = satData?.udlrn ? {
-    udlrn: satData.udlrn,
-    crop: satData.declared_crop,
+  const farmInfo = satData?.ulpin ? {
+    ulpin: satData.ulpin,
+    survey: satData.survey_number,
     area: satData.land_area_ha,
-    lat: satData.gps_lat,
-    lng: satData.gps_lng
+    lat: satData.farm_lat,
+    lng: satData.farm_lng
   } : null;
 
   if (satLoading && !satData) {
@@ -82,12 +82,12 @@ export default function FarmerSatellite() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <p className="text-sm text-gray-500">UDLRN</p>
-              <p className="font-medium">{farmInfo.udlrn}</p>
+              <p className="text-sm text-gray-500">ULPIN</p>
+              <p className="font-medium">{farmInfo.ulpin}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Crop</p>
-              <p className="font-medium">{farmInfo.crop}</p>
+              <p className="text-sm text-gray-500">Survey No.</p>
+              <p className="font-medium">{farmInfo.survey}</p>
             </div>
             <div>
               <p className="text-sm text-gray-500">Area</p>

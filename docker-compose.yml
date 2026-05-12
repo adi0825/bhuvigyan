@@ -266,6 +266,17 @@ services:
       - claims-service
       - location-service
       - notification-service
+      - kyc-service
+      - report-service
+      - cce-service
+      - land-api-service
+      - carbon-service
+      - analytics-service
+      - insurer-service
+      - scheduler-service
+      - csc-service
+      - officer-service
+      - state-service
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -614,6 +625,90 @@ services:
     ports: ["8088:8088"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8088/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks: [bhuvigyan-net]
+
+  csc-service:
+    build:
+      context: ./backend
+      dockerfile: csc-service/Dockerfile
+    container_name: bhuvigyan-csc-service
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      <<: *spring-env
+      SERVER_PORT: "8094"
+      POSTGRES_DB: bhuvigyan
+      POSTGRES_USER: bhuvigyan
+      POSTGRES_PASSWORD: bhuvigyan123
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports: ["8094:8094"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8094/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks: [bhuvigyan-net]
+
+  officer-service:
+    build:
+      context: ./backend
+      dockerfile: officer-service/Dockerfile
+    container_name: bhuvigyan-officer-service
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      <<: *spring-env
+      SERVER_PORT: "8095"
+      POSTGRES_DB: bhuvigyan
+      POSTGRES_USER: bhuvigyan
+      POSTGRES_PASSWORD: bhuvigyan123
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports: ["8095:8095"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8095/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks: [bhuvigyan-net]
+
+  state-service:
+    build:
+      context: ./backend
+      dockerfile: state-service/Dockerfile
+    container_name: bhuvigyan-state-service
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      <<: *spring-env
+      SERVER_PORT: "8096"
+      POSTGRES_DB: bhuvigyan
+      POSTGRES_USER: bhuvigyan
+      POSTGRES_PASSWORD: bhuvigyan123
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports: ["8096:8096"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8096/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3

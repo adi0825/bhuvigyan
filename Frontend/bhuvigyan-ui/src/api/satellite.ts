@@ -1,12 +1,18 @@
 import api from './axios';
 
 export interface SatelliteData {
-  udlrn?: string;
   farmer_id?: string;
+  farmer_name?: string;
+  ulpin?: string;
+  survey_number?: string;
+  village?: string;
+  taluk?: string;
+  district?: string;
+  state?: string;
   land_area_ha?: number;
-  declared_crop?: string;
-  gps_lat?: number;
-  gps_lng?: number;
+  farm_lat?: number;
+  farm_lng?: number;
+  kgis_verified?: boolean;
   satellite_analysis?: {
     ndvi: {
       ndvi: number;
@@ -15,19 +21,27 @@ export interface SatelliteData {
       cloud_cover_pct: number;
       source: string;
     };
-    ndwi: {
+    ndwi?: {
       ndwi: number;
       label: string;
       moisture_status: string;
       scan_date: string;
     };
-    sar_flood: {
-      flood_detected: boolean;
-      confidence: number;
-      scan_date: string;
-      source: string;
+    sar_flood?: {
+      flood_detected?: boolean;
+      confidence?: number;
+      scan_date?: string;
+      source?: string;
+      flood_area_ha?: number;
     };
-    fire: {
+    fire_alerts?: {
+      fire_detected: boolean;
+      hotspot_count: number;
+      closest_distance_km: number;
+      source: string;
+      scan_date: string;
+    };
+    fire?: {
       detected: boolean;
       hotspot_count: number;
       closest_distance_km: number;
@@ -46,7 +60,7 @@ export interface SatelliteData {
       scan_date: string;
       attribution: string;
     };
-    thumbnail_b64: string;
+    thumbnail_b64?: string;
     computed_at: string;
   };
   ndvi?: {
@@ -56,44 +70,41 @@ export interface SatelliteData {
     cloud_cover_pct: number;
     source: string;
   };
-  ndwi: {
+  ndwi?: {
     ndwi: number;
     label: string;
     moisture_status: string;
     scan_date: string;
   };
-  sar_flood: {
-    flood_detected: boolean;
-    confidence: number;
-    scan_date: string;
-    source: string;
+  sar_flood?: {
+    flood_detected?: boolean;
+    confidence?: number;
+    scan_date?: string;
+    source?: string;
+    flood_area_ha?: number;
   };
-  fire: {
-    detected: boolean;
-    hotspot_count: number;
-    closest_distance_km: number;
-    source: string;
-    scan_date: string;
+  fire?: {
+    detected?: boolean;
+    hotspot_count?: number;
+    closest_distance_km?: number;
+    source?: string;
+    scan_date?: string;
   };
-  satellite_tile: {
+  satellite_tile?: {
     tile_url: string;
     source: string;
     scan_date: string;
     attribution: string;
   };
-  ndvi_tile: {
+  ndvi_tile?: {
     tile_url: string;
     source: string;
     scan_date: string;
     attribution: string;
   };
   thumbnail_b64?: string;
-  farm_name: string;
-  lat: number;
-  lng: number;
-  buffer_m: number;
-  scanned_at: string;
   computed_at?: string;
+  cached?: boolean;
 }
 
 export interface TimeseriesPoint {

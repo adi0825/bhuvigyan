@@ -58,6 +58,71 @@ async def get_farmers(db: AsyncSession = Depends(get_db), user = Depends(require
     return {"success": True, "data": {"farmers": [{"id": str(f.id), "fullName": f.full_name, "mobile": f.mobile, "isVerified": f.is_verified} for f in farmers], "total": total}}
 
 
+@router.get("/farm/search")
+async def search_farm_by_udlrn(
+    udlrn: str = Query(None),
+    mobile: str = Query(None),
+    survey: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user = Depends(require_admin_role)
+):
+    """Search farm by UDLRN/ULPIN, mobile number, or survey number."""
+    if not any([udlrn, mobile, survey]):
+        raise HTTPException(status_code=400, detail="Provide at least one: udlrn, mobile, or survey")
+
+    query = select(Farmer)
+    if udlrn:
+        # Search in ulpin field
+        query = query.where(or_(Farmer.ulpin.ilike(f"%{udlrn}%"), Farmer.ulpin == udlrn))
+    elif mobile:
+        query = query.where(Farmer.mobile == mobile)
+    elif survey:
+        query = query.where(Farmer.survey_number.ilike(f"%{survey}%"))
+
+    result = await db.execute(query)
+    farmer = result.scalar_one_or_none()
+
+    if not farmer:
+        raise HTTPException(status_code=404, detail="No farmer found with this UDLRN/mobile/survey number")
+
+    # Get active claims count
+    claims_result = await db.execute(
+        select(Claim).where(Claim.farmer_id == farmer.id)
+    )
+    claims = claims_result.scalars().all()
+
+    return {
+        "farmer_id": str(farmer.id),
+        "full_name": farmer.full_name,
+        "mobile": farmer.mobile,
+        "ulpin": farmer.ulpin,
+        "survey_number": farmer.survey_number,
+        "village": farmer.village,
+        "taluk": farmer.taluk,
+        "district": farmer.district,
+        "state": farmer.state,
+        "land_area_ha": farmer.land_area_ha,
+        "ownership_type": farmer.ownership_type,
+        "farm_lat": farmer.farm_lat,
+        "farm_lng": farmer.farm_lng,
+        "kgis_verified": farmer.kgis_verified,
+        "bank_verified": farmer.bank_verified,
+        "status": farmer.status,
+        "carbon_score": farmer.carbon_score,
+        "total_claims": len(claims),
+        "active_claims": [
+            {
+                "claim_number": c.claim_number,
+                "status": c.status,
+                "crop_type": c.crop_type,
+                "claim_amount": c.claim_amount,
+                "fraud_score_v1": c.fraud_score_v1
+            }
+            for c in claims
+        ]
+    }
+
+
 @router.get("/farmers/{farmer_id}")
 async def get_farmer_detail(farmer_id: str, db: AsyncSession = Depends(get_db), user = Depends(require_admin_role)):
     from uuid import UUID

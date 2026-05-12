@@ -1,151 +1,177 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Satellite, MapPin, Filter, RefreshCw } from "lucide-react";
+import { Satellite, Search } from "lucide-react";
 import GovButton from "../../components/ui/GovButton";
+import GovInput from "../../components/ui/GovInput";
 import api from "../../api/axios";
 import toast from "react-hot-toast";
-
-interface FarmMarker {
-  farmerId: string;
-  farmerName: string;
-  udlrn: string;
-  lat: number;
-  lng: number;
-  ndvi: number;
-  ndviLabel: string;
-  district: string;
-  crop: string;
-  landAreaHa: number;
-  floodDetected: boolean;
-  lastScan: string;
-}
-
-const ndviColor = (v: number) => {
-  if (v > 0.5) return "#22c55e";
-  if (v > 0.3) return "#eab308";
-  if (v > 0.15) return "#f97316";
-  return "#ef4444";
-};
+import { useSatelliteData } from "../../hooks/useSatelliteData";
+import BhumiAICard from "../../components/satellite/BhumiAICard";
+import FarmSatelliteMap from "../../components/satellite/FarmSatelliteMap";
 
 export default function SatelliteAnalytics() {
-  const [farms, setFarms] = useState<FarmMarker[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [districtFilter, setDistrictFilter] = useState("");
-  const [selectedFarm, setSelectedFarm] = useState<FarmMarker | null>(null);
+  const [udlrn, setUdlrn] = useState('');
+  const [foundFarmer, setFoundFarmer] = useState<any>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchFarms();
-  }, []);
+  const { data: satData, loading: satLoading, error: satError, refetch } = useSatelliteData(foundFarmer?.farmer_id || null);
 
-  const fetchFarms = async () => {
-    setLoading(true);
+  const handleSearch = async () => {
+    if (!udlrn.trim()) return;
+    setSearchLoading(true);
+    setSearchError(null);
+    setFoundFarmer(null);
+
     try {
-      const resp = await api.get('/satellite/farms');
-      const data = resp.data?.data || [];
-      setFarms(data);
-    } catch {
-      toast.error("Failed to load satellite data");
+      const res = await api.get('/admin/farm/search', { params: { udlrn } });
+      setFoundFarmer(res.data);
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'No farmer found with this UDLRN';
+      setSearchError(msg);
+      toast.error(msg);
     } finally {
-      setLoading(false);
+      setSearchLoading(false);
     }
   };
 
-  const filteredFarms = farms.filter(f => !districtFilter || f.district === districtFilter);
-  const districts = [...new Set(farms.map(f => f.district))];
-
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Satellite className="w-6 h-6 text-blue-600" /> Satellite Analytics</h1>
-        <GovButton variant="outline" onClick={fetchFarms}><RefreshCw className="w-4 h-4 mr-1" /> Refresh</GovButton>
-      </div>
+    <div className="p-6 space-y-6 max-w-7xl">
+      <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900">
+        <Satellite className="w-6 h-6 text-blue-600" />
+        Satellite Analytics
+      </h1>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Total Farms", value: farms.length },
-          { label: "Healthy (NDVI>0.5)", value: farms.filter(f => f.ndvi > 0.5).length, color: "text-green-600" },
-          { label: "Stressed", value: farms.filter(f => f.ndvi <= 0.5 && f.ndvi > 0.3).length, color: "text-yellow-600" },
-          { label: "Critical", value: farms.filter(f => f.ndvi <= 0.15).length, color: "text-red-600" },
-        ].map(s => (
-          <div key={s.label} className="bg-white rounded-xl shadow p-4 border border-gray-100">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">{s.label}</p>
-            <p className={`text-2xl font-black mt-1 ${s.color || "text-gray-900"}`}>{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Map Area */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow p-4">
-          <div className="flex items-center gap-3 mb-4">
-            <Filter className="w-4 h-4 text-gray-400" />
-            <select value={districtFilter} onChange={e => setDistrictFilter(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm">
-              <option value="">All Districts</option>
-              {districts.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
-
-          {/* Simulated Map */}
-          <div className="relative bg-slate-100 rounded-xl overflow-hidden" style={{ height: 400 }}>
-            <svg viewBox="0 0 400 300" className="w-full h-full">
-              {/* Background grid */}
-              {Array.from({ length: 10 }).map((_, i) => (
-                <g key={i}>
-                  <line x1={i * 40} y1={0} x2={i * 40} y2={300} stroke="#e2e8f0" strokeWidth={0.5} />
-                  <line x1={0} y1={i * 30} x2={400} y2={i * 30} stroke="#e2e8f0" strokeWidth={0.5} />
-                </g>
-              ))}
-              {/* Markers */}
-              {filteredFarms.map(f => {
-                const x = ((f.lng - 77.3) / 0.4) * 400;
-                const y = 300 - ((f.lat - 13.0) / 0.4) * 300;
-                return (
-                  <g key={f.farmerId} onClick={() => setSelectedFarm(f)} className="cursor-pointer">
-                    <circle cx={x} cy={y} r={12} fill={ndviColor(f.ndvi)} opacity={0.3} />
-                    <circle cx={x} cy={y} r={6} fill={ndviColor(f.ndvi)} stroke="white" strokeWidth={2} />
-                    <text x={x} y={y - 14} textAnchor="middle" fontSize="10" fill="#374151">{f.farmerName}</text>
-                  </g>
-                );
-              })}
-            </svg>
-            {/* Legend */}
-            <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur rounded-lg p-2 text-xs shadow">
-              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-500" /> Healthy (&gt;0.5)</div>
-              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-yellow-500" /> Stressed (0.3-0.5)</div>
-              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-orange-500" /> Poor (0.15-0.3)</div>
-              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-500" /> Critical (&lt;0.15)</div>
-            </div>
-          </div>
+      {/* UDLRN Search */}
+      <div className="bg-white rounded-xl shadow border border-gray-200 p-5">
+        <div className="text-sm font-semibold text-gray-800 mb-3">
+          Search Farm by UDLRN / ULPIN
         </div>
+        <div className="flex gap-3">
+          <GovInput
+            value={udlrn}
+            onChange={e => setUdlrn(e.target.value)}
+            placeholder="Enter UDLRN e.g. KA-29-1234-56789"
+            className="flex-1"
+            onKeyPress={e => e.key === 'Enter' && handleSearch()}
+          />
+          <GovButton onClick={handleSearch} disabled={!udlrn.trim() || searchLoading}>
+            {searchLoading ? 'Searching...' : <><Search className="w-4 h-4 mr-1" /> Search</>}
+          </GovButton>
+        </div>
+        {searchError && (
+          <div className="mt-3 text-sm text-red-600">
+            ❌ {searchError}
+          </div>
+        )}
+      </div>
 
-        {/* Farm List */}
-        <div className="bg-white rounded-xl shadow p-4 space-y-3 max-h-[500px] overflow-y-auto">
-          <h3 className="font-bold text-gray-900">Farms by Anomaly</h3>
-          {loading ? <p className="text-gray-500 text-sm">Loading...</p> :
-            filteredFarms.sort((a, b) => a.ndvi - b.ndvi).map(f => (
-              <button key={f.farmerId} onClick={() => setSelectedFarm(f)} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedFarm?.farmerId === f.farmerId ? 'border-blue-500 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'}`}>
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{f.farmerName}</span>
-                  <span className="text-xs font-mono font-bold" style={{ color: ndviColor(f.ndvi) }}>{f.ndvi.toFixed(2)}</span>
+      {/* Farmer Info Card */}
+      {foundFarmer && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-xl shadow border border-gray-200 p-5"
+        >
+          <div className="text-sm font-semibold text-gray-800 mb-4">
+            Farm Record — {foundFarmer.ulpin}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              ['Farmer', foundFarmer.full_name],
+              ['Mobile', foundFarmer.mobile],
+              ['ULPIN', foundFarmer.ulpin || '--'],
+              ['Survey No.', foundFarmer.survey_number],
+              ['Village', foundFarmer.village],
+              ['Taluk', foundFarmer.taluk],
+              ['District', foundFarmer.district],
+              ['State', foundFarmer.state],
+              ['Land Area', `${foundFarmer.land_area_ha} Ha`],
+              ['Ownership', foundFarmer.ownership_type],
+              ['KGIS', foundFarmer.kgis_verified ? '✅ Verified' : '❌ Not verified'],
+              ['Bank', foundFarmer.bank_verified ? '✅ Verified' : '❌ Not verified'],
+              ['Status', foundFarmer.status],
+              ['Coordinates', `${foundFarmer.farm_lat?.toFixed(4)}, ${foundFarmer.farm_lng?.toFixed(4)}`],
+              ['Active Claims', foundFarmer.total_claims],
+              ['Carbon Score', foundFarmer.carbon_score?.toFixed(1)]
+            ].map(([label, value]) => (
+              <div key={label as string}>
+                <div className="text-xs text-gray-400 uppercase tracking-wide">
+                  {label}
                 </div>
-                <p className="text-xs text-gray-500">{f.crop} · {f.district}</p>
-              </button>
+                <div className="text-sm font-medium text-gray-800 mt-0.5">
+                  {value || '--'}
+                </div>
+              </div>
             ))}
-        </div>
-      </div>
-
-      {/* Selected Farm Detail */}
-      {selectedFarm && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-xl shadow p-6">
-          <h3 className="font-bold text-gray-900 mb-4">Farm Detail: {selectedFarm.farmerName}</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-            <div><p className="text-gray-500 text-xs">NDVI</p><p className="font-bold text-lg" style={{ color: ndviColor(selectedFarm.ndvi) }}>{selectedFarm.ndvi}</p></div>
-            <div><p className="text-gray-500 text-xs">Crop</p><p className="font-bold">{selectedFarm.crop}</p></div>
-            <div><p className="text-gray-500 text-xs">District</p><p className="font-bold">{selectedFarm.district}</p></div>
-            <div><p className="text-gray-500 text-xs">Coordinates</p><p className="font-mono text-xs">{selectedFarm.lat.toFixed(4)}, {selectedFarm.lng.toFixed(4)}</p></div>
           </div>
+
+          {/* Active Claims */}
+          {foundFarmer.active_claims?.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="text-xs font-semibold text-gray-500 mb-2 uppercase">
+                Active Claims
+              </div>
+              <div className="space-y-2">
+                {foundFarmer.active_claims.map((c: any) => (
+                  <div key={c.claim_number} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                    <span className="font-mono text-xs text-gray-600">{c.claim_number}</span>
+                    <span>{c.crop_type}</span>
+                    <span className="font-semibold text-green-700">₹{c.claim_amount?.toLocaleString()}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      c.fraud_score_v1 > 60 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                    }`}>
+                      Score: {c.fraud_score_v1?.toFixed(0) || '--'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </motion.div>
+      )}
+
+      {/* Satellite Data (same as farmer sees) */}
+      {foundFarmer && (
+        <div className="space-y-5">
+          <div className="text-sm font-semibold text-gray-700">
+            🌿 Satellite Analysis for {foundFarmer.ulpin}
+            <span className="ml-2 text-xs font-normal text-gray-400">
+              (same data the farmer sees)
+            </span>
+          </div>
+
+          {satLoading ? (
+            <div className="bg-white rounded-xl shadow border border-gray-200 p-8 text-center text-gray-400 text-sm animate-pulse">
+              Fetching satellite data from GEE...
+            </div>
+          ) : satError ? (
+            <div className="bg-white rounded-xl shadow border border-red-200 p-5">
+              <div className="text-sm text-red-600 mb-3">
+                ⚠️ Satellite data unavailable: {satError}
+              </div>
+              <GovButton variant="outline" onClick={() => refetch()}>
+                Retry
+              </GovButton>
+            </div>
+          ) : satData ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <BhumiAICard
+                data={satData}
+                loading={satLoading}
+                isCached={satData.cached}
+                onRefresh={refetch}
+              />
+              <FarmSatelliteMap
+                rgbTileUrl={satData.rgb_tile_url}
+                ndviTileUrl={satData.ndvi_tile_url}
+                center={{ lat: foundFarmer.farm_lat, lng: foundFarmer.farm_lng }}
+                zoom={15}
+                loading={!satData.rgb_tile_url}
+              />
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   );

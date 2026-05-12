@@ -32,45 +32,64 @@ async def get_farm_satellite(
     user: dict = Depends(get_current_farmer),
 ):
     """Full farm satellite analysis for a farmer.
-    Uses UDLRN-based caching for consistency with admin view."""
+    Uses Farmer table coordinates (farm_lat, farm_lng)."""
     fid = UUID(farmer_id)
 
     # Verify farmer owns this land
     if user.get("userId") != str(fid):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    udlrn_result = await db.execute(
-        select(UdlrnMaster).where(UdlrnMaster.farmer_id == fid)
+    # Load farmer record from Farmer table
+    result = await db.execute(
+        select(Farmer).where(Farmer.id == fid)
     )
-    udlrn = udlrn_result.scalar_one_or_none()
-    if not udlrn:
-        raise HTTPException(status_code=404, detail="Land record not found")
+    farmer = result.scalar_one_or_none()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found")
 
-    # Cache by UDLRN for consistency with admin view
-    cache = await satellite_cache.get("sat-udlrn", udlrn.udlrn)
+    # Check coordinates exist
+    if not farmer.farm_lat or not farmer.farm_lng:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "no_coordinates",
+                "message": "Farm coordinates not set. Please complete land registration first."
+            }
+        )
+
+    lat = farmer.farm_lat
+    lng = farmer.farm_lng
+
+    # Cache by farmer_id for consistency
+    cache = await satellite_cache.get("sat-farm", str(fid))
     if cache:
+        cache['cached'] = True
         return {"success": True, "data": cache, "cached": True}
-
-    lat = float(udlrn.gps_lat) if udlrn.gps_lat else 13.1234
-    lng = float(udlrn.gps_lng) if udlrn.gps_lng else 77.5678
 
     analysis = sat_service.get_full_analysis(lat, lng, buffer_m=5000)
     if isinstance(analysis.get("ndvi"), dict) and "error" in analysis["ndvi"]:
         return {"success": False, "error": analysis["ndvi"]["error"], "message": analysis["ndvi"]["message"]}
 
-    # Same structure as admin endpoint for consistency
+    # Include farm info in response
     result = {
-        "udlrn": udlrn.udlrn,
-        "farmer_id": str(udlrn.farmer_id),
-        "land_area_ha": udlrn.land_area_ha,
-        "declared_crop": udlrn.declared_crop,
-        "gps_lat": lat,
-        "gps_lng": lng,
+        "farmer_id": str(farmer.id),
+        "farmer_name": farmer.full_name,
+        "ulpin": farmer.ulpin,
+        "survey_number": farmer.survey_number,
+        "village": farmer.village,
+        "taluk": farmer.taluk,
+        "district": farmer.district,
+        "state": farmer.state,
+        "land_area_ha": farmer.land_area_ha,
+        "farm_lat": lat,
+        "farm_lng": lng,
+        "kgis_verified": farmer.kgis_verified,
         "satellite_analysis": analysis,
-        "computed_at": datetime.utcnow().isoformat()
+        "computed_at": datetime.utcnow().isoformat(),
+        "cached": False
     }
 
-    await satellite_cache.set("sat-udlrn", result, satellite_cache.TTL_FARM, udlrn.udlrn)
+    await satellite_cache.set("sat-farm", result, satellite_cache.TTL_FARM, str(fid))
     return {"success": True, "data": result, "cached": False}
 
 
@@ -87,12 +106,18 @@ async def get_farm_timeseries(
     if cache:
         return {"success": True, "data": {"timeseries": cache, "months": months}, "cached": True}
 
-    udlrn_result = await db.execute(
-        select(UdlrnMaster).where(UdlrnMaster.farmer_id == fid)
+    # Load farmer record from Farmer table
+    result = await db.execute(
+        select(Farmer).where(Farmer.id == fid)
     )
-    udlrn = udlrn_result.scalar_one_or_none()
-    lat = float(udlrn.gps_lat) if udlrn and udlrn.gps_lat else 13.1234
-    lng = float(udlrn.gps_lng) if udlrn and udlrn.gps_lng else 77.5678
+    farmer = result.scalar_one_or_none()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found")
+    if not farmer.farm_lat or not farmer.farm_lng:
+        raise HTTPException(status_code=400, detail="Coordinates not available")
+
+    lat = farmer.farm_lat
+    lng = farmer.farm_lng
 
     ts = sat_service.get_ndvi_timeseries(lat, lng, months=months)
     await satellite_cache.set("sat-farm-ts", ts, satellite_cache.TTL_TIMESERIES, str(fid), months)
@@ -107,28 +132,36 @@ async def get_farm_tiles(
 ):
     """Satellite tile URLs for a farmer's plot."""
     fid = UUID(farmer_id)
-    udlrn_result = await db.execute(
-        select(UdlrnMaster).where(UdlrnMaster.farmer_id == fid)
-    )
-    udlrn = udlrn_result.scalar_one_or_none()
-    if not udlrn:
-        raise HTTPException(status_code=404, detail="Land record not found")
+    cache = await satellite_cache.get("sat-farm-tiles", str(fid))
+    if cache:
+        return {"success": True, "data": cache, "cached": True}
 
-    lat = float(udlrn.gps_lat) if udlrn.gps_lat else 13.1234
-    lng = float(udlrn.gps_lng) if udlrn.gps_lng else 77.5678
+    # Load farmer record from Farmer table
+    result = await db.execute(
+        select(Farmer).where(Farmer.id == fid)
+    )
+    farmer = result.scalar_one_or_none()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found")
+    if not farmer.farm_lat or not farmer.farm_lng:
+        raise HTTPException(status_code=400, detail="Coordinates not available")
+
+    lat = farmer.farm_lat
+    lng = farmer.farm_lng
 
     rgb_tile = sat_service.get_satellite_tile_url(lat, lng)
     ndvi_tile = sat_service.get_ndvi_tile_url(lat, lng)
 
-    return {
-        "success": True,
-        "data": {
-            "rgb_tile": rgb_tile.get("tile_url", ""),
-            "ndvi_tile": ndvi_tile.get("tile_url", ""),
-            "center": {"lat": lat, "lng": lng},
-            "zoom": 15,
-        }
+    tile_data = {
+        "rgb_tile_url": rgb_tile.get("tile_url", ""),
+        "ndvi_tile_url": ndvi_tile.get("tile_url", ""),
+        "center": {"lat": lat, "lng": lng},
+        "zoom": 15,
+        "cached": False
     }
+
+    await satellite_cache.set("sat-farm-tiles", tile_data, satellite_cache.TTL_FARM, str(fid))
+    return {"success": True, "data": tile_data, "cached": False}
 
 
 @router.get("/farm/{farmer_id}/thumbnail")
