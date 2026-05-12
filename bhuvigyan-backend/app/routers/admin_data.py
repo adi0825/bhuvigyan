@@ -72,12 +72,12 @@ async def search_farm_by_udlrn(
 
     query = select(Farmer)
     if udlrn:
-        # Search in ulpin field
-        query = query.where(or_(Farmer.ulpin.ilike(f"%{udlrn}%"), Farmer.ulpin == udlrn))
+        # Search by mobile since ulpin doesn't exist in Farmer model
+        query = query.where(Farmer.mobile.ilike(f"%{udlrn}%"))
     elif mobile:
         query = query.where(Farmer.mobile == mobile)
     elif survey:
-        query = query.where(Farmer.survey_number.ilike(f"%{survey}%"))
+        query = query.where(Farmer.village.ilike(f"%{survey}%"))
 
     result = await db.execute(query)
     farmer = result.scalar_one_or_none()
@@ -95,20 +95,20 @@ async def search_farm_by_udlrn(
         "farmer_id": str(farmer.id),
         "full_name": farmer.full_name,
         "mobile": farmer.mobile,
-        "ulpin": farmer.ulpin,
-        "survey_number": farmer.survey_number,
+        "ulpin": None,
+        "survey_number": None,
         "village": farmer.village,
         "taluk": farmer.taluk,
         "district": farmer.district,
-        "state": farmer.state,
-        "land_area_ha": farmer.land_area_ha,
-        "ownership_type": farmer.ownership_type,
-        "farm_lat": farmer.farm_lat,
-        "farm_lng": farmer.farm_lng,
-        "kgis_verified": farmer.kgis_verified,
-        "bank_verified": farmer.bank_verified,
-        "status": farmer.status,
-        "carbon_score": farmer.carbon_score,
+        "state": farmer.state_code,
+        "land_area_ha": farmer.land_area,
+        "ownership_type": None,
+        "farm_lat": farmer.latitude,
+        "farm_lng": farmer.longitude,
+        "kgis_verified": farmer.is_verified,
+        "bank_verified": None,
+        "status": "active" if not farmer.is_blacklisted else "blacklisted",
+        "carbon_score": None,
         "total_claims": len(claims),
         "active_claims": [
             {

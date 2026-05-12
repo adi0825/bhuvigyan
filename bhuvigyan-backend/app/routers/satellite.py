@@ -48,7 +48,7 @@ async def get_farm_satellite(
         raise HTTPException(status_code=404, detail="Farmer not found")
 
     # Check coordinates exist
-    if not farmer.farm_lat or not farmer.farm_lng:
+    if not farmer.latitude or not farmer.longitude:
         raise HTTPException(
             status_code=400,
             detail={
@@ -57,8 +57,8 @@ async def get_farm_satellite(
             }
         )
 
-    lat = farmer.farm_lat
-    lng = farmer.farm_lng
+    lat = farmer.latitude
+    lng = farmer.longitude
 
     # Cache by farmer_id for consistency
     cache = await satellite_cache.get("sat-farm", str(fid))
@@ -74,16 +74,16 @@ async def get_farm_satellite(
     result = {
         "farmer_id": str(farmer.id),
         "farmer_name": farmer.full_name,
-        "ulpin": farmer.ulpin,
-        "survey_number": farmer.survey_number,
+        "ulpin": farmer.ulpin if hasattr(farmer, 'ulpin') else None,
+        "survey_number": None,
         "village": farmer.village,
         "taluk": farmer.taluk,
         "district": farmer.district,
-        "state": farmer.state,
-        "land_area_ha": farmer.land_area_ha,
+        "state": farmer.state_code,
+        "land_area_ha": farmer.land_area,
         "farm_lat": lat,
         "farm_lng": lng,
-        "kgis_verified": farmer.kgis_verified,
+        "kgis_verified": farmer.is_verified,
         "satellite_analysis": analysis,
         "computed_at": datetime.utcnow().isoformat(),
         "cached": False
@@ -113,11 +113,11 @@ async def get_farm_timeseries(
     farmer = result.scalar_one_or_none()
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
-    if not farmer.farm_lat or not farmer.farm_lng:
+    if not farmer.latitude or not farmer.longitude:
         raise HTTPException(status_code=400, detail="Coordinates not available")
 
-    lat = farmer.farm_lat
-    lng = farmer.farm_lng
+    lat = farmer.latitude
+    lng = farmer.longitude
 
     ts = sat_service.get_ndvi_timeseries(lat, lng, months=months)
     await satellite_cache.set("sat-farm-ts", ts, satellite_cache.TTL_TIMESERIES, str(fid), months)
@@ -143,11 +143,11 @@ async def get_farm_tiles(
     farmer = result.scalar_one_or_none()
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
-    if not farmer.farm_lat or not farmer.farm_lng:
+    if not farmer.latitude or not farmer.longitude:
         raise HTTPException(status_code=400, detail="Coordinates not available")
 
-    lat = farmer.farm_lat
-    lng = farmer.farm_lng
+    lat = farmer.latitude
+    lng = farmer.longitude
 
     rgb_tile = sat_service.get_satellite_tile_url(lat, lng)
     ndvi_tile = sat_service.get_ndvi_tile_url(lat, lng)
