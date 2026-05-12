@@ -15,6 +15,14 @@ except ImportError:
 
 from app.services.gee_init import initialize_gee, GEE_INITIALIZED
 
+def ensure_gee():
+    """Ensure GEE is initialized before use. Returns True if available."""
+    if not GEE_AVAILABLE:
+        return False
+    if not GEE_INITIALIZED:
+        return initialize_gee()
+    return True
+
 
 def get_ndvi_label(value: float) -> str:
     if value < 0.15:
@@ -101,7 +109,7 @@ class SatelliteService:
             return "Excellent"
 
     def get_ndvi_current(self, lat: float, lng: float, buffer_m: int = 500):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return self._mock_ndvi_current()
         try:
             point = ee.Geometry.Point([lng, lat])
@@ -155,7 +163,7 @@ class SatelliteService:
         }
 
     def get_ndvi_timeseries(self, lat: float, lng: float, months: int = 12, buffer_m: int = 500):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return generate_mock_ndvi_12months()
         try:
             point = ee.Geometry.Point([lng, lat])
@@ -200,7 +208,7 @@ class SatelliteService:
             return generate_mock_ndvi_12months()
 
     def get_ndwi(self, lat: float, lng: float, buffer_m: int = 500):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             val = round(random.uniform(-0.3, 0.3), 4)
             return {"ndwi": val, "label": "Adequate", "source": "Sentinel-2 SR Harmonized (MOCK)"}
         try:
@@ -240,7 +248,7 @@ class SatelliteService:
             return {"error": "gee_error", "message": str(e)}
 
     def get_sar_flood(self, lat: float, lng: float, buffer_m: int = 1000):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return {"flood_detected": False, "flood_area_sqm": 0, "flood_area_ha": 0, "source": "Sentinel-1 GRD (MOCK)", "threshold_db": -15.0}
         try:
             point = ee.Geometry.Point([lng, lat])
@@ -280,7 +288,7 @@ class SatelliteService:
             return {"error": "gee_error", "message": str(e)}
 
     def get_fire_alerts(self, lat: float, lng: float, radius_km: int = 5):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return {"fire_detected": False, "hotspot_count": 0, "radius_km": radius_km, "source": "NASA FIRMS MODIS (MOCK)", "period_days": 14}
         try:
             point = ee.Geometry.Point([lng, lat])
@@ -304,7 +312,7 @@ class SatelliteService:
             return {"error": "gee_error", "message": str(e)}
 
     def get_satellite_tile_url(self, lat: float, lng: float, buffer_m: int = 1000):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return {"tile_url": "", "type": "true_color_rgb", "source": "Sentinel-2 SR Harmonized (MOCK)", "bands": "B4-B3-B2"}
         try:
             point = ee.Geometry.Point([lng, lat])
@@ -330,7 +338,7 @@ class SatelliteService:
             return {"error": "gee_error", "message": str(e)}
 
     def get_ndvi_tile_url(self, lat: float, lng: float, buffer_m: int = 1000):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return {"tile_url": "", "type": "ndvi_heatmap", "source": "Sentinel-2 SR Harmonized (MOCK)"}
         try:
             point = ee.Geometry.Point([lng, lat])
@@ -361,7 +369,7 @@ class SatelliteService:
     def get_satellite_thumbnail_b64(self, lat: float, lng: float, buffer_m: int = 5000) -> str:
         """Generate a base64-embedded PNG thumbnail from GEE Sentinel-2.
         Returns empty string if GEE unavailable or no images found."""
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return ""
         try:
             if not initialize_gee():
@@ -426,7 +434,7 @@ class SatelliteService:
         }
 
     def get_region_analysis(self, state: str, district: str, start_date: str, end_date: str):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return self._mock_region_analysis(state, district, start_date, end_date)
         try:
             districts = ee.FeatureCollection("FAO/GAUL/2015/level2")
@@ -524,7 +532,7 @@ class SatelliteService:
             return self._mock_region_analysis(state, district, start_date, end_date, f"GEE computation error: {str(e)}")
 
     def get_region_timeseries(self, region, start_date: str, end_date: str):
-        if not GEE_AVAILABLE:
+        if not ensure_gee():
             return []
         try:
             collection = (
