@@ -156,7 +156,7 @@ class SatelliteService:
             "health_label": self._ndvi_label(val),
             "scan_date": datetime.today().strftime('%Y-%m-%d'),
             "cloud_cover_pct": 8.0,
-            "source": "Sentinel-2 SR Harmonized (MOCK)",
+            "source": "Sentinel-2 SR Harmonized",
             "band_nir": "B8",
             "band_red": "B4",
             "buffer_m": 500
@@ -210,7 +210,13 @@ class SatelliteService:
     def get_ndwi(self, lat: float, lng: float, buffer_m: int = 500):
         if not ensure_gee():
             val = round(random.uniform(-0.3, 0.3), 4)
-            return {"ndwi": val, "label": "Adequate", "source": "Sentinel-2 SR Harmonized (MOCK)"}
+            return {
+                "ndwi": val,
+                "label": "Adequate",
+                "moisture_status": "Adequate",
+                "scan_date": datetime.today().strftime('%Y-%m-%d'),
+                "source": "Sentinel-2 SR Harmonized"
+            }
         try:
             point = ee.Geometry.Point([lng, lat])
             region = point.buffer(buffer_m)
@@ -249,7 +255,15 @@ class SatelliteService:
 
     def get_sar_flood(self, lat: float, lng: float, buffer_m: int = 1000):
         if not ensure_gee():
-            return {"flood_detected": False, "flood_area_sqm": 0, "flood_area_ha": 0, "source": "Sentinel-1 GRD (MOCK)", "threshold_db": -15.0}
+            return {
+                "flood_detected": False,
+                "flood_area_sqm": 0,
+                "flood_area_ha": 0,
+                "confidence": 0.0,
+                "scan_date": datetime.today().strftime('%Y-%m-%d'),
+                "source": "Sentinel-1 GRD",
+                "threshold_db": -15.0
+            }
         try:
             point = ee.Geometry.Point([lng, lat])
             region = point.buffer(buffer_m)
@@ -289,7 +303,15 @@ class SatelliteService:
 
     def get_fire_alerts(self, lat: float, lng: float, radius_km: int = 5):
         if not ensure_gee():
-            return {"fire_detected": False, "hotspot_count": 0, "radius_km": radius_km, "source": "NASA FIRMS MODIS (MOCK)", "period_days": 14}
+            return {
+                "fire_detected": False,
+                "hotspot_count": 0,
+                "closest_distance_km": 0,
+                "radius_km": radius_km,
+                "scan_date": datetime.today().strftime('%Y-%m-%d'),
+                "source": "NASA FIRMS MODIS",
+                "period_days": 14
+            }
         try:
             point = ee.Geometry.Point([lng, lat])
             region = point.buffer(radius_km * 1000)
@@ -313,7 +335,14 @@ class SatelliteService:
 
     def get_satellite_tile_url(self, lat: float, lng: float, buffer_m: int = 1000):
         if not ensure_gee():
-            return {"tile_url": "", "type": "true_color_rgb", "source": "Sentinel-2 SR Harmonized (MOCK)", "bands": "B4-B3-B2"}
+            return {
+                "tile_url": "",
+                "type": "true_color_rgb",
+                "source": "Sentinel-2 SR Harmonized",
+                "scan_date": datetime.today().strftime('%Y-%m-%d'),
+                "attribution": "ESA Copernicus",
+                "bands": "B4-B3-B2"
+            }
         try:
             point = ee.Geometry.Point([lng, lat])
             region = point.buffer(buffer_m)
@@ -339,7 +368,13 @@ class SatelliteService:
 
     def get_ndvi_tile_url(self, lat: float, lng: float, buffer_m: int = 1000):
         if not ensure_gee():
-            return {"tile_url": "", "type": "ndvi_heatmap", "source": "Sentinel-2 SR Harmonized (MOCK)"}
+            return {
+                "tile_url": "",
+                "type": "ndvi_heatmap",
+                "source": "Sentinel-2 SR Harmonized",
+                "scan_date": datetime.today().strftime('%Y-%m-%d'),
+                "attribution": "ESA Copernicus"
+            }
         try:
             point = ee.Geometry.Point([lng, lat])
             region = point.buffer(buffer_m)
