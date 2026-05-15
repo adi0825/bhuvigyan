@@ -167,16 +167,16 @@ export default function AdminSatellitePanel() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <GovCard className="text-center">
             <p className="text-xs text-[#6b7280] uppercase font-semibold">Mean NDVI</p>
-            <p className="text-3xl font-bold text-[#1a6b3c] mt-1">{data.mean_ndvi.toFixed(2)}</p>
-            <p className="text-xs text-[#6b7280] mt-1">{data.health_label}</p>
+            <p className="text-3xl font-bold text-[#1a6b3c] mt-1">{typeof data.mean_ndvi === 'number' ? data.mean_ndvi.toFixed(2) : '--'}</p>
+            <p className="text-xs text-[#6b7280] mt-1">{data.health_label || '--'}</p>
           </GovCard>
           <GovCard className="text-center">
             <p className="text-xs text-[#6b7280] uppercase font-semibold">Mean NDWI</p>
-            <p className="text-3xl font-bold text-[#2563eb] mt-1">{data.mean_ndwi.toFixed(2)}</p>
+            <p className="text-3xl font-bold text-[#2563eb] mt-1">{typeof data.mean_ndwi === 'number' ? data.mean_ndwi.toFixed(2) : '--'}</p>
           </GovCard>
           <GovCard className="text-center">
             <p className="text-xs text-[#6b7280] uppercase font-semibold">Stress Area</p>
-            <p className="text-3xl font-bold text-[#ef4444] mt-1">{data.stress_area_ha}</p>
+            <p className="text-3xl font-bold text-[#ef4444] mt-1">{typeof data.stress_area_ha === 'number' ? data.stress_area_ha.toFixed(1) : '--'}</p>
             <p className="text-xs text-[#6b7280] mt-1">hectares</p>
           </GovCard>
           <GovCard className="text-center">
@@ -207,14 +207,14 @@ export default function AdminSatellitePanel() {
                     <td className="py-2 px-3">
                       <span
                         className="font-bold"
-                        style={{ color: zone.ndvi < 0.35 ? '#ef4444' : zone.ndvi < 0.5 ? '#f59e0b' : '#22c55e' }}
+                        style={{ color: (zone.ndvi ?? 0) < 0.35 ? '#ef4444' : (zone.ndvi ?? 0) < 0.5 ? '#f59e0b' : '#22c55e' }}
                       >
-                        {zone.ndvi.toFixed(2)}
+                        {typeof zone.ndvi === 'number' ? zone.ndvi.toFixed(2) : '--'}
                       </span>
                     </td>
                     <td className="py-2 px-3 text-xs">{zone.label}</td>
                     <td className="py-2 px-3 text-xs text-[#6b7280]">
-                      {zone.lat.toFixed(4)}, {zone.lng.toFixed(4)}
+                      {typeof zone.lat === 'number' ? zone.lat.toFixed(4) : '--'}, {typeof zone.lng === 'number' ? zone.lng.toFixed(4) : '--'}
                     </td>
                   </tr>
                 ))}

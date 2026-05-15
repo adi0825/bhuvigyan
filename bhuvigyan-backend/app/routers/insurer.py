@@ -26,6 +26,19 @@ class ClaimRejectRequest(BaseModel):
 
 @router.post("/login")
 async def insurer_login(body: InsurerLoginRequest, db: AsyncSession = Depends(get_db)):
+    from app.config import settings
+    if settings.DEV_MODE:
+        token = create_insurer_token("00000000-0000-0000-0000-000000000001", body.email)
+        refresh_token = create_refresh_token({"userId": "00000000-0000-0000-0000-000000000001", "email": body.email})
+        return {
+            "success": True,
+            "data": {
+                "accessToken": token,
+                "refreshToken": refresh_token,
+                "company": "Demo Insurance Co.",
+                "fullName": "Demo Officer",
+            },
+        }
     result = await db.execute(select(Insurer).where(Insurer.email == body.email))
     insurer = result.scalar_one_or_none()
     if not insurer:

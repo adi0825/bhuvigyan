@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Boolean, DateTime, Numeric, Integer, Date
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from uuid import uuid4
 from datetime import datetime
 from app.database import Base
@@ -27,6 +27,8 @@ class Farmer(Base):
     crop_name = Column(String(100), nullable=True)
     latitude = Column(Numeric(10,8), nullable=True)
     longitude = Column(Numeric(11,8), nullable=True)
+    landData = Column(JSONB, nullable=True)  # Shared schema satellite data
+    satellite_verified = Column(Boolean, default=False)  # Set true if coordinatesVerified
     is_verified = Column(Boolean, default=False)
     is_demo = Column(Boolean, default=False)
     is_blacklisted = Column(Boolean, default=False)

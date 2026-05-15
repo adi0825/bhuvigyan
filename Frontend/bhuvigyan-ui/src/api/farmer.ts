@@ -49,11 +49,12 @@ getCarbon: () => api.get<CarbonData>('/farmer/carbon'),
     api.post('/farmer/carbon/enrol', data),
 
   register: (data: {
-    fullName: string; mobile: string; language: string; dob: string;
-    gender: string; aadhaar: string; state: string; district: string;
-    taluk: string; hobli?: string; village: string; surveyNumber: string;
-    landAreaHa: number; ownershipType: string; bankAccount: string;
-    bankIfsc: string; bankName: string;
+    fullName: string; mobile: string; aadhaar?: string;
+    gender?: string; dob?: string; village?: string;
+    taluk?: string; district?: string; state_code?: string;
+    pincode?: string; bank_name?: string; bank_ifsc?: string;
+    bank_account?: string; land_area?: number; land_unit?: string;
+    crop_name?: string; latitude?: number; longitude?: number;
   }) => api.post('/farmer/register', data),
 
   getWeather: (district: string, state?: string) =>
@@ -64,4 +65,7 @@ getCarbon: () => api.get<CarbonData>('/farmer/carbon'),
   getNdviHistory: () => api.get('/farmer/ndvi-history'),
 
   getSatelliteData: () => api.get('/farmer/satellite/all'),
+
+  forgotUdlrn: (mobile: string) =>
+    api.post('/farmer/forgot-udlrn', { mobile }),
 };

@@ -52,40 +52,92 @@ async def get_admin_stats(db: AsyncSession = Depends(get_db), user = Depends(req
 
 @router.get("/farmers")
 async def get_farmers(db: AsyncSession = Depends(get_db), user = Depends(require_admin_role), page: int = 1, limit: int = 10):
-    result = await db.execute(select(Farmer).limit(limit).offset((page-1)*limit))
+    from sqlalchemy import func
+    from app.models.claim import Claim
+
+    # Get farmers
+    result = await db.execute(select(Farmer).limit(limit).offset((page - 1) * limit))
     farmers = result.scalars().all()
     total = await db.scalar(select(func.count(Farmer.id)))
-    return {"success": True, "data": {"farmers": [{"id": str(f.id), "fullName": f.full_name, "mobile": f.mobile, "isVerified": f.is_verified} for f in farmers], "total": total}}
+
+    # Pre-fetch udlrn and claims counts in bulk
+    farmer_ids = [f.id for f in farmers]
+    udlrn_result = await db.execute(select(UdlrnMaster).where(UdlrnMaster.farmer_id.in_(farmer_ids)))
+    udlrn_map = {u.farmer_id: u for u in udlrn_result.scalars().all()}
+
+    claims_result = await db.execute(
+        select(Claim.farmer_id, func.count(Claim.id)).where(Claim.farmer_id.in_(farmer_ids)).group_by(Claim.farmer_id)
+    )
+    claims_map = {row[0]: row[1] for row in claims_result.all()}
+
+    def _build(f: Farmer) -> dict:
+        u = udlrn_map.get(f.id)
+        return {
+            "id": str(f.id),
+            "fullName": f.full_name,
+            "mobile": f.mobile,
+            "isVerified": f.is_verified,
+            "village": f.village,
+            "district": f.district,
+            "state": f.state_code,
+            "registeredAt": f.created_at.isoformat() if f.created_at else None,
+            "landAreaHa": float(u.land_area_ha) if u and u.land_area_ha else 0,
+            "claimsCount": claims_map.get(f.id, 0),
+        }
+
+    return {"success": True, "data": {"farmers": [_build(f) for f in farmers], "total": total}}
 
 
 @router.get("/farm/search")
 async def search_farm_by_udlrn(
     udlrn: str = Query(None),
     mobile: str = Query(None),
-    survey: str = Query(None),
+    state: str = Query(None),
+    district: str = Query(None),
+    taluk: str = Query(None),
+    village: str = Query(None),
     db: AsyncSession = Depends(get_db),
     user = Depends(require_admin_role)
 ):
-    """Search farm by UDLRN/ULPIN, mobile number, or survey number."""
-    if not any([udlrn, mobile, survey]):
-        raise HTTPException(status_code=400, detail="Provide at least one: udlrn, mobile, or survey")
+    """Search farm by UDLRN, mobile, or region (state+district+taluk+village)."""
+    if not any([udlrn, mobile, state, district, taluk, village]):
+        raise HTTPException(status_code=400, detail="Provide at least one search parameter")
 
-    query = select(Farmer)
+    farmer = None
+    udlrn_rec = None
+
     if udlrn:
-        # Search by mobile since ulpin doesn't exist in Farmer model
-        query = query.where(Farmer.mobile.ilike(f"%{udlrn}%"))
+        # Proper UDLRN search via UdlrnMaster join
+        from app.services.farmer_service import get_farmer_by_udlrn
+        farmer = await get_farmer_by_udlrn(db, udlrn)
+        if farmer:
+            udlrn_res = await db.execute(select(UdlrnMaster).where(UdlrnMaster.farmer_id == farmer.id))
+            udlrn_rec = udlrn_res.scalar_one_or_none()
     elif mobile:
-        query = query.where(Farmer.mobile == mobile)
-    elif survey:
-        query = query.where(Farmer.village.ilike(f"%{survey}%"))
-
-    result = await db.execute(query)
-    farmer = result.scalar_one_or_none()
+        from app.services.farmer_service import get_farmer_by_mobile
+        farmer = await get_farmer_by_mobile(db, mobile)
+    else:
+        # Region-based search
+        query = select(Farmer)
+        if state:
+            query = query.where(Farmer.state_code.ilike(f"%{state}%"))
+        if district:
+            query = query.where(Farmer.district.ilike(f"%{district}%"))
+        if taluk:
+            query = query.where(Farmer.taluk.ilike(f"%{taluk}%"))
+        if village:
+            query = query.where(Farmer.village.ilike(f"%{village}%"))
+        result = await db.execute(query.limit(1))
+        farmer = result.scalar_one_or_none()
 
     if not farmer:
-        raise HTTPException(status_code=404, detail="No farmer found with this UDLRN/mobile/survey number")
+        raise HTTPException(status_code=404, detail="No farmer found")
 
-    # Get active claims count
+    if not udlrn_rec:
+        udlrn_res = await db.execute(select(UdlrnMaster).where(UdlrnMaster.farmer_id == farmer.id))
+        udlrn_rec = udlrn_res.scalar_one_or_none()
+
+    # Get active claims
     claims_result = await db.execute(
         select(Claim).where(Claim.farmer_id == farmer.id)
     )
@@ -95,28 +147,28 @@ async def search_farm_by_udlrn(
         "farmer_id": str(farmer.id),
         "full_name": farmer.full_name,
         "mobile": farmer.mobile,
-        "ulpin": None,
+        "ulpin": udlrn_rec.udlrn if udlrn_rec else None,
         "survey_number": None,
         "village": farmer.village,
         "taluk": farmer.taluk,
         "district": farmer.district,
         "state": farmer.state_code,
-        "land_area_ha": farmer.land_area,
+        "land_area_ha": float(udlrn_rec.land_area_ha) if udlrn_rec else farmer.land_area,
         "ownership_type": None,
-        "farm_lat": farmer.latitude,
-        "farm_lng": farmer.longitude,
+        "farm_lat": float(farmer.latitude) if farmer.latitude else (float(udlrn_rec.gps_lat) if udlrn_rec and udlrn_rec.gps_lat else None),
+        "farm_lng": float(farmer.longitude) if farmer.longitude else (float(udlrn_rec.gps_lng) if udlrn_rec and udlrn_rec.gps_lng else None),
         "kgis_verified": farmer.is_verified,
-        "bank_verified": None,
+        "bank_verified": bool(farmer.bank_account and farmer.bank_ifsc),
         "status": "active" if not farmer.is_blacklisted else "blacklisted",
-        "carbon_score": None,
+        "carbon_score": float(udlrn_rec.carbon_score) if udlrn_rec else None,
         "total_claims": len(claims),
         "active_claims": [
             {
                 "claim_number": c.claim_number,
                 "status": c.status,
-                "crop_type": c.crop_type,
-                "claim_amount": c.claim_amount,
-                "fraud_score_v1": c.fraud_score_v1
+                "crop_type": c.declared_crop,
+                "claim_amount": float(c.claim_amount_requested) if c.claim_amount_requested else None,
+                "fraud_score_v1": c.fraud_score
             }
             for c in claims
         ]
@@ -130,12 +182,42 @@ async def get_farmer_detail(farmer_id: str, db: AsyncSession = Depends(get_db), 
     farmer = result.scalar_one_or_none()
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
+
+    # Fetch UDLRN and land area
+    udlrn_result = await db.execute(select(UdlrnMaster).where(UdlrnMaster.farmer_id == UUID(farmer_id)))
+    udlrn = udlrn_result.scalar_one_or_none()
+
+    # Fetch claims
+    claims_result = await db.execute(select(Claim).where(Claim.farmer_id == UUID(farmer_id)))
+    claims = claims_result.scalars().all()
+
     return {"success": True, "data": {
         "id": str(farmer.id), "fullName": farmer.full_name, "mobile": farmer.mobile,
-        "isVerified": farmer.is_verified, "carbonEligible": farmer.carbon_eligible,
-        "carbonEnrolled": farmer.carbon_enrolled, "village": farmer.village,
-        "district": farmer.district, "state": farmer.state_code,
+        "verificationStatus": "verified" if farmer.is_verified else "pending",
+        "isVerified": farmer.is_verified,
+        "carbonEligible": farmer.carbon_eligible,
+        "carbonEnrolled": farmer.carbon_enrolled,
+        "village": farmer.village,
+        "district": farmer.district,
+        "state": farmer.state_code,
         "registeredAt": farmer.created_at.isoformat() if farmer.created_at else None,
+        "landAreaHa": float(udlrn.land_area_ha) if udlrn and udlrn.land_area_ha else 0,
+        "udlrn": udlrn.udlrn if udlrn else None,
+        "latitude": float(farmer.latitude) if farmer.latitude else (float(udlrn.gps_lat) if udlrn and udlrn.gps_lat else None),
+        "longitude": float(farmer.longitude) if farmer.longitude else (float(udlrn.gps_lng) if udlrn and udlrn.gps_lng else None),
+        "claims": [
+            {
+                "id": str(c.id),
+                "claimNumber": c.claim_number,
+                "status": c.status,
+                "amount": float(c.claim_amount_requested) if c.claim_amount_requested else 0,
+                "lossType": c.loss_type or "—",
+                "date": c.loss_date.isoformat() if c.loss_date else (c.filed_at.isoformat() if c.filed_at else "—"),
+            }
+            for c in claims
+        ],
+        "documents": [],
+        "ndviHistory": [],
     }}
 
 
@@ -539,3 +621,170 @@ async def get_officer_visits(
         "gpsLng": v.gps_lng,
         "photos": v.photos or [],
     } for v in visits]}
+
+
+@router.get("/claims/{claim_id}/detail")
+async def get_claim_detail_full(
+    claim_id: str,
+    db: AsyncSession = Depends(get_db),
+    user = Depends(require_admin_role),
+):
+    """Admin claim detail with all 6 tabs: overview, satellite, docs, fraud, inspection, audit."""
+    from uuid import UUID
+    from app.models.farmer import Farmer
+    from app.models.udlrn_master import UdlrnMaster
+    from app.models.claim_document import ClaimDocument
+    from app.models.fraud_scoring import FraudScore, FraudExplanation
+    from app.models.claim_status_history import ClaimStatusHistory
+    from app.models.field_inspection_report import FieldInspectionReport
+    from app.models.field_visit import FieldVisit
+    from app.services.satellite_service import SatelliteService
+
+    cid = UUID(claim_id)
+
+    # 1. Claim + Farmer + UDLRN
+    claim_result = await db.execute(select(Claim).where(Claim.id == cid))
+    claim = claim_result.scalar_one_or_none()
+    if not claim:
+        raise HTTPException(404, detail="Claim not found")
+
+    farmer_result = await db.execute(select(Farmer).where(Farmer.id == claim.farmer_id))
+    farmer = farmer_result.scalar_one_or_none()
+
+    udlrn_result = await db.execute(select(UdlrnMaster).where(UdlrnMaster.farmer_id == claim.farmer_id))
+    udlrn = udlrn_result.scalar_one_or_none()
+
+    # 2. Documents
+    docs_result = await db.execute(select(ClaimDocument).where(ClaimDocument.claim_id == cid))
+    docs = docs_result.scalars().all()
+
+    # 3. Fraud Score
+    fraud_result = await db.execute(
+        select(FraudScore).where(FraudScore.claim_id == cid).order_by(FraudScore.created_at.desc())
+    )
+    fraud = fraud_result.scalar_one_or_none()
+
+    fraud_factors = []
+    if fraud:
+        expl_result = await db.execute(
+            select(FraudExplanation).where(FraudExplanation.fraud_score_id == fraud.id)
+        )
+        expl = expl_result.scalar_one_or_none()
+        if expl and expl.top_factors:
+            fraud_factors = expl.top_factors
+
+    # 4. Inspection Report
+    visit_result = await db.execute(select(FieldVisit).where(FieldVisit.claim_id == cid))
+    visit = visit_result.scalar_one_or_none()
+    inspection = None
+    if visit:
+        insp_result = await db.execute(
+            select(FieldInspectionReport).where(FieldInspectionReport.visit_id == visit.id)
+        )
+        inspection = insp_result.scalar_one_or_none()
+
+    # 5. Audit Trail
+    audit_result = await db.execute(
+        select(ClaimStatusHistory).where(ClaimStatusHistory.claim_id == cid).order_by(ClaimStatusHistory.created_at.asc())
+    )
+    audit_events = audit_result.scalars().all()
+
+    # 6. Real-time Satellite Data
+    sat_data = {}
+    if farmer and farmer.latitude and farmer.longitude:
+        try:
+            svc = SatelliteService()
+            lat, lng = float(farmer.latitude), float(farmer.longitude)
+            ndvi = svc.get_ndvi_current(lat, lng)
+            ndwi = svc.get_ndwi(lat, lng)
+            sar = svc.get_sar_flood(lat, lng)
+            ts = svc.get_ndvi_timeseries(lat, lng, months=6)
+            sat_data = {
+                "ndvi_current": ndvi if isinstance(ndvi, dict) else None,
+                "ndwi_current": ndwi if isinstance(ndwi, dict) else None,
+                "sar_flood": sar if isinstance(sar, dict) else None,
+                "ndvi_timeseries": ts,
+                "farm_location": {"lat": lat, "lng": lng},
+            }
+        except Exception:
+            sat_data = {"error": "Satellite data temporarily unavailable"}
+
+    return {
+        "success": True,
+        "data": {
+            # TAB 1: Overview
+            "overview": {
+                "claimId": str(claim.id),
+                "claimNumber": claim.claim_number,
+                "status": claim.status,
+                "lossType": claim.damage_cause,
+                "lossDate": str(claim.loss_date) if claim.loss_date else None,
+                "damagePercent": float(claim.damage_percent) if claim.damage_percent else None,
+                "affectedAreaHa": float(claim.affected_area) if claim.affected_area else None,
+                "claimAmount": float(claim.claim_amount_requested) if claim.claim_amount_requested else None,
+                "declaredCrop": claim.declared_crop,
+                "season": claim.season,
+                "year": claim.year,
+                "filedAt": str(claim.filed_at) if claim.filed_at else None,
+                "decidedAt": str(claim.decided_at) if claim.decided_at else None,
+                "approvedAmount": float(claim.approved_amount) if claim.approved_amount else None,
+                "farmer": {
+                    "id": str(farmer.id) if farmer else None,
+                    "name": farmer.full_name if farmer else None,
+                    "mobile": farmer.mobile if farmer else None,
+                    "village": farmer.village if farmer else None,
+                    "district": farmer.district if farmer else None,
+                    "state": farmer.state_code if farmer else None,
+                    "latitude": float(farmer.latitude) if farmer and farmer.latitude else None,
+                    "longitude": float(farmer.longitude) if farmer and farmer.longitude else None,
+                },
+                "udlrn": {
+                    "udlrn": udlrn.udlrn if udlrn else None,
+                    "landAreaHa": float(udlrn.land_area_ha) if udlrn and udlrn.land_area_ha else None,
+                    "declaredCrop": udlrn.declared_crop if udlrn else None,
+                },
+            },
+            # TAB 2: Satellite Evidence
+            "satellite": sat_data,
+            # TAB 3: Documents
+            "documents": [
+                {
+                    "id": str(d.id),
+                    "type": d.document_type,
+                    "status": d.status,
+                    "submittedAt": str(d.created_at),
+                    "metaData": d.meta_data,
+                }
+                for d in docs
+            ],
+            # TAB 4: Fraud Score
+            "fraud": {
+                "score": int(fraud.score) if fraud else None,
+                "riskLevel": fraud.risk_level if fraud else None,
+                "confidence": float(fraud.confidence) if fraud else None,
+                "modelVersion": fraud.model_version if fraud else None,
+                "factors": fraud_factors,
+            },
+            # TAB 5: Inspection Report
+            "inspection": {
+                "visitStatus": visit.status if visit else None,
+                "inspectorNotes": inspection.notes if inspection else None,
+                "actualLossPct": float(inspection.actual_loss_pct) if inspection and inspection.actual_loss_pct else None,
+                "cropCondition": inspection.crop_condition if inspection else None,
+                "gpsVerified": inspection.gps_verified if inspection else None,
+                "recommendation": inspection.recommendation if inspection else None,
+                "photos": inspection.photos if inspection else [],
+                "metaData": inspection.meta_data if inspection else {},
+            } if inspection or visit else None,
+            # TAB 6: Audit Trail
+            "auditTrail": [
+                {
+                    "date": str(e.created_at),
+                    "status": e.status,
+                    "actor": e.changed_by or "System",
+                    "notes": e.notes or "",
+                }
+                for e in audit_events
+            ],
+        },
+    }

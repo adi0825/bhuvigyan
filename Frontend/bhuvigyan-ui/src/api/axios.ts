@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -16,14 +16,26 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  (error: AxiosError) => {
     if (error.response?.status === 401) {
+      // Clear auth state silently and let ProtectedRoute redirect
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('userRole');
       localStorage.removeItem('userId');
-      window.location.href = '/login';
+      // Dispatch custom event so AuthContext updates in the same tab
+      window.dispatchEvent(new CustomEvent('bhuvigyan:auth:clear'));
+      console.warn('[axios] 401 received — auth cleared');
     }
+
+    if (error.response) {
+      const data = error.response.data as any;
+      const serverMessage = data?.error?.message || data?.detail;
+      error.message = serverMessage || error.message;
+    } else if (error.request) {
+      error.message = 'Network error - server not responding';
+    }
+
     return Promise.reject(error);
   }
 );

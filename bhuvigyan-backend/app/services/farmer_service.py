@@ -1,12 +1,27 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from typing import Optional
 from uuid import UUID
 from app.models.farmer import Farmer
 from app.models.udlrn_master import UdlrnMaster
 
+def _normalize_mobile(mobile: str) -> str:
+    """Strip +91 prefix, spaces, dashes to get clean 10-digit number."""
+    cleaned = mobile.strip().replace(' ', '').replace('-', '')
+    if cleaned.startswith('+91'):
+        cleaned = cleaned[3:]
+    elif cleaned.startswith('91') and len(cleaned) == 12:
+        cleaned = cleaned[2:]
+    return cleaned
+
 async def get_farmer_by_mobile(db: AsyncSession, mobile: str) -> Optional[Farmer]:
-    result = await db.execute(select(Farmer).where(Farmer.mobile == mobile))
+    clean = _normalize_mobile(mobile)
+    # Try both clean number and +91 prefixed number
+    result = await db.execute(
+        select(Farmer).where(
+            or_(Farmer.mobile == clean, Farmer.mobile == f"+91{clean}", Farmer.mobile == f"91{clean}")
+        )
+    )
     return result.scalar_one_or_none()
 
 async def get_farmer_by_id(db: AsyncSession, farmer_id: UUID) -> Optional[Farmer]:

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  TrendingUp, Activity, Sprout, FileText, Bell, ArrowRight
+  TrendingUp, Activity, Sprout, FileText, Bell, ArrowRight,
+  MapPin, ShieldCheck, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import GovCard from '../../components/ui/GovCard';
 import SkeletonLoader from '../../components/ui/SkeletonLoader';
@@ -12,6 +13,7 @@ import { useFarmerData } from '../../hooks/useFarmerData';
 import { useSatelliteData } from '../../hooks/useSatelliteData';
 import { useSatelliteTimeseries } from '../../hooks/useSatelliteTimeseries';
 import { farmerApi } from '../../api/farmer';
+import { useAuth } from '../../auth/AuthContext';
 import toast from 'react-hot-toast';
 
 function ndviLabel(score: number) {
@@ -36,21 +38,34 @@ function formatDate(date: string) {
 
 export default function FarmerDashboard() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const { profile, land, carbon, notifications, claims, loading, unreadCount, refetch } = useFarmerData();
   const [farmerId, setFarmerId] = useState<string>('');
 
   useEffect(() => {
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        setFarmerId(user.userId || '');
-      } catch {}
+    if (user?.userId) {
+      setFarmerId(user.userId);
     }
-  }, []);
+  }, [user]);
 
-  const { data: satData, loading: satLoading, isCached } = useSatelliteData(farmerId);
+  const { data: satData, loading: satLoading, error: satError, isCached } = useSatelliteData(farmerId);
   const { timeseries: satTimeseries } = useSatelliteTimeseries(farmerId, 12);
+
+  // Fallback: if satellite summary fails but timeseries has data, compute summary from latest point
+  const effectiveSatData = satData || (
+    satTimeseries && satTimeseries.length > 0
+      ? {
+          ndvi: {
+            ndvi: satTimeseries[satTimeseries.length - 1].ndvi,
+            health_label: satTimeseries[satTimeseries.length - 1].label,
+            scan_date: (satTimeseries[satTimeseries.length - 1] as any).date || satTimeseries[satTimeseries.length - 1].month,
+            cloud_cover_pct: 0,
+            source: 'Sentinel-2 (timeseries fallback)',
+          },
+        } as any
+      : null
+  );
+
 
   const handleMarkAllRead = async () => {
     try {
@@ -77,16 +92,127 @@ export default function FarmerDashboard() {
     );
   }
 
-  const ndvi = satData?.ndvi?.ndvi ?? carbon?.currentNdvi ?? 0.42;
-  const ndviInfo = ndviLabel(ndvi);
+  const ndvi = effectiveSatData?.ndvi?.ndvi ?? carbon?.currentNdvi ?? null;
+  const ndviInfo = ndvi != null ? ndviLabel(ndvi) : null;
+
+  const HA_TO_ACRES = 2.47105;
+  const summaryNdvi = effectiveSatData?.ndvi?.ndvi ?? null;
+  const rawArea = land?.landAreaHa ?? null;
+  const summaryAreaAc = rawArea != null ? (Number(rawArea) * HA_TO_ACRES).toFixed(2) : '—';
+  const summaryAreaHa = rawArea != null ? Number(rawArea).toFixed(2) : '—';
+  const summaryStatus = '—';
+  const summaryVerified = effectiveSatData ? 'Verified' : '—';
+
+  // Extract landData from shared schema if available
+  const landData = (profile as any)?.landData || null;
+  const ndviValue = landData?.ndvi ?? summaryNdvi ?? null;
+  const cropHealth = landData?.cropHealth ?? (ndviValue ? ndviLabel(ndviValue).text : '—');
+
+  // Derive missing metrics from live satellite data
+  const satNdvi = effectiveSatData?.ndvi?.ndvi ?? null;
+  const satNdwi = effectiveSatData?.ndwi?.ndwi ?? null;
+
+  // Crop coverage approximated from NDVI (NDVI 0→0%, 0.8→100%)
+  const derivedCropCoverage = satNdvi != null ? Math.min(100, Math.max(0, Math.round((satNdvi / 0.8) * 100))) : null;
+  const cropCoverage = landData?.cropCoverage ?? derivedCropCoverage ?? null;
+
+  // Soil moisture approximated from NDWI (NDWI -0.4→0%, 0.4→100%)
+  const derivedSoilMoisture = satNdwi != null ? Math.min(100, Math.max(0, Math.round(((satNdwi + 0.4) / 0.8) * 100))) : null;
+  const soilMoisture = landData?.soilMoisture ?? derivedSoilMoisture ?? null;
+
+  // Fraud score derived from NDVI (same heuristic as backend)
+  const derivedFraudScore = satNdvi != null
+    ? (satNdvi < 0.15 ? 85 : satNdvi < 0.30 ? 55 : satNdvi > 0.65 ? 10 : 15)
+    : null;
+  const fraudScore = landData?.fraudScore ?? derivedFraudScore ?? null;
+
+  const lastSatelliteDate = landData?.lastSatelliteDate ?? satData?.ndvi?.scan_date ?? null;
 
   return (
     <div className="space-y-6 max-w-6xl">
+      {/* DEBUG: show actual source */}
+      {satData?.ndvi?.source && (
+        <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${(satData.ndvi.source).includes('Simulated') ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+          {(satData.ndvi.source).includes('Simulated') ? <AlertTriangle className="w-5 h-5 shrink-0" /> : <CheckCircle className="w-5 h-5 shrink-0" />}
+          <span>
+            <b>Source: {satData.ndvi.source}</b> {satData.cached ? '(cached)' : '(fresh)'}
+          </span>
+        </div>
+      )}
+      {/* Summary Cards - 6 Parameter Boxes */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {/* NDVI */}
+        <GovCard className="p-4 flex flex-col items-center gap-2 bg-[#f0fdf4] border-green-200">
+          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center shrink-0">
+            <Sprout className="w-5 h-5 text-[#1a6b3c]" />
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-[#6b7280]">NDVI</p>
+            <p className="text-lg font-bold text-[#1a1a1a]">{typeof ndviValue === 'number' ? ndviValue.toFixed(2) : '—'}</p>
+          </div>
+        </GovCard>
+
+        {/* Crop Health */}
+        <GovCard className="p-4 flex flex-col items-center gap-2">
+          <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center shrink-0">
+            <Activity className="w-5 h-5 text-green-600" />
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-[#6b7280]">Crop Health</p>
+            <p className="text-sm font-bold text-[#1a1a1a]">{cropHealth}</p>
+          </div>
+        </GovCard>
+
+        {/* Crop Coverage */}
+        <GovCard className="p-4 flex flex-col items-center gap-2">
+          <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center shrink-0">
+            <TrendingUp className="w-5 h-5 text-purple-600" />
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-[#6b7280]">Crop Coverage</p>
+            <p className="text-lg font-bold text-[#1a1a1a]">{cropCoverage ? `${cropCoverage}%` : '—'}</p>
+          </div>
+        </GovCard>
+
+        {/* Soil Moisture */}
+        <GovCard className="p-4 flex flex-col items-center gap-2">
+          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
+            <Activity className="w-5 h-5 text-blue-600" />
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-[#6b7280]">Soil Moisture</p>
+            <p className="text-lg font-bold text-[#1a1a1a]">{soilMoisture ? `${soilMoisture}%` : '—'}</p>
+          </div>
+        </GovCard>
+
+        {/* Fraud Risk */}
+        <GovCard className="p-4 flex flex-col items-center gap-2">
+          <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-[#6b7280]">Fraud Risk</p>
+            <p className="text-lg font-bold text-[#1a1a1a]">{fraudScore ? `${fraudScore}/100` : '—'}</p>
+          </div>
+        </GovCard>
+
+        {/* Last Satellite Date */}
+        <GovCard className="p-4 flex flex-col items-center gap-2">
+          <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5 text-gray-600" />
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-[#6b7280]">Last Scan</p>
+            <p className="text-xs font-bold text-[#1a1a1a]">{lastSatelliteDate ? new Date(lastSatelliteDate).toLocaleDateString() : '—'}</p>
+          </div>
+        </GovCard>
+      </div>
+
       {/* Bhumi AI + NDVI Chart */}
       <div className="grid md:grid-cols-2 gap-5">
         {/* Bhumi AI Intelligence */}
         <BhumiAICard
-          data={satData}
+          data={effectiveSatData}
           loading={satLoading}
           isCached={isCached}
         />
@@ -100,7 +226,7 @@ export default function FarmerDashboard() {
             <span className="px-2 py-1 bg-[#F0FAF5] text-[#016B4B] text-[10px] font-bold rounded-full">SATELLITE VERIFIED</span>
           </div>
           <div className="h-[220px]">
-            <NdviChart data={satTimeseries?.map(t => ({ month: t.month, ndvi: t.ndvi })) || carbon?.monthlyNdvi || []} height={220} />
+            <NdviChart data={satTimeseries?.map(t => ({ month: (t as any).date || t.month, ndvi: t.ndvi })) || carbon?.monthlyNdvi || []} height={220} />
           </div>
           <div className="mt-3 flex items-center justify-between text-[11px] text-[#6B7280]">
             <span>Last scan: {satData?.ndvi?.scan_date || '—'}</span>

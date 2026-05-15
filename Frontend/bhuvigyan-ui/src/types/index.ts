@@ -18,6 +18,7 @@ export interface AuthUser {
   email?: string;
   role: Role;
   fullName?: string;
+  company?: string;
 }
 
 export interface Farmer {
@@ -56,9 +57,14 @@ export interface CarbonData {
   enrolled: boolean;
   practiceType: string | null;
   estimatedCredits: number;
-  monthlyNdvi: { month: string; ndvi: number }[];
+  landAreaHa?: number;
+  monthlyNdvi: { month: string; ndvi: number; label?: string; date?: string }[];
   carbonScore?: number;
   currentNdvi?: number;
+  practices?: Array<{ key: string; label: string; icon: string; creditsPerHa: number; estimatedCredits: number; description: string }>;
+  marketPrice?: number;
+  estimatedAnnualIncome?: number;
+  reason?: string;
 }
 
 export interface Claim {
@@ -131,12 +137,29 @@ export interface FarmerProfile {
   fullName: string;
   mobile: string;
   email?: string;
-  state?: string;
+  isVerified?: boolean;
+  stateCode?: string;
+  districtCode?: string;
   district?: string;
+  taluk?: string;
+  village?: string;
+  hobli?: string;
   udlrn?: string;
-  carbonEligible: boolean;
-  carbonEnrolled: boolean;
-  createdAt: string;
+  landAreaHa?: number;
+  declaredCrop?: string;
+  surveyNumber?: string;
+  latitude?: number;
+  longitude?: number;
+  farm_lat?: number;
+  farm_lng?: number;
+  bankAccount?: string;
+  bankIfsc?: string;
+  bankName?: string;
+  carbonEligible?: boolean;
+  carbonEnrolled?: boolean;
+  notificationPrefs?: { inApp: boolean; sms: boolean; whatsapp: boolean };
+  parcels?: Array<{ udlrn: string; areaHa: number; landUse: string; crop: string }>;
+  createdAt?: string;
 }
 
 export interface ClaimDetail extends Claim {

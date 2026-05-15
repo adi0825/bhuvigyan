@@ -1,3 +1,12 @@
+import socket
+# Force IPv4 for all connections — ee.Initialize hangs on IPv6
+_orig_getaddrinfo = socket.getaddrinfo
+
+def _getaddrinfo_ipv4_only(host, port, family=socket.AF_INET, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+socket.getaddrinfo = _getaddrinfo_ipv4_only
+
 import ee
 import os
 import logging
@@ -10,7 +19,8 @@ GEE_PROJECT_ID = os.getenv("GEE_PROJECT_ID", "agri-494914")
 
 
 def initialize_gee():
-    """Lazy, idempotent GEE init. Tries multiple methods."""
+    """Lazy GEE init. Tries OAuth first, then project, then unauthenticated.
+    Matches ndvi.py _ensure_gee() exactly — direct sync calls, no threads."""
     global GEE_INITIALIZED, GEE_INIT_ERROR
     if GEE_INITIALIZED:
         return True
@@ -24,7 +34,7 @@ def initialize_gee():
     except Exception:
         pass
 
-    # Method 1: Project-based init (uses cached OAuth credentials)
+    # Method 1: Project-based init (explicit project — works with stored OAuth creds)
     try:
         ee.Initialize(project=GEE_PROJECT_ID)
         logger.info("✓ GEE initialized (project)")
@@ -35,7 +45,18 @@ def initialize_gee():
         GEE_INIT_ERROR = str(e)
         logger.warning(f"GEE project init failed: {e}")
 
-    # Method 2: Service account key file (if exists)
+    # Method 2: OAuth credentials without explicit project (fallback)
+    try:
+        ee.Initialize()
+        logger.info("✓ GEE initialized (OAuth)")
+        GEE_INITIALIZED = True
+        GEE_INIT_ERROR = None
+        return True
+    except Exception as e:
+        GEE_INIT_ERROR = str(e)
+        logger.warning(f"GEE OAuth init failed: {e}")
+
+    # Method 3: Service account key file (if exists)
     key_path = os.path.join(os.path.dirname(__file__), "..", "secrets", "gee_service_account.json")
     if os.path.exists(key_path):
         try:
@@ -49,7 +70,7 @@ def initialize_gee():
             GEE_INIT_ERROR = str(e)
             logger.warning(f"GEE service account init failed: {e}")
 
-    # Method 3: Unauthenticated / dev mode (very limited)
+    # Method 4: unauthenticated fallback
     try:
         ee.Initialize()
         logger.info("✓ GEE initialized unauthenticated (dev mode)")

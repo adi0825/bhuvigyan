@@ -5,5 +5,6 @@ from app.routers import (
     notifications, reports, dossier, state_claims,
     inspector, admin_inspector, inspector_auth,
     payments, carbon_credits, farm_registrations,
-    satellite
+    satellite, land, analysis,
+    csc_portal, insurer_portal
 )

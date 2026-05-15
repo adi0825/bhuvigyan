@@ -45,12 +45,7 @@ export default function FarmerLogin() {
       setResendTimer(45);
       toast.success('OTP sent successfully');
     } catch (error: any) {
-      let errorMessage = 'Failed to send OTP';
-      if (!error.response) {
-        errorMessage = 'Network Error: Backend services not reachable. Please run start-local.bat and wait for startup.';
-      } else {
-        errorMessage = error.response?.data?.error?.message || error.response?.data?.error || errorMessage;
-      }
+      const errorMessage = error.response?.data?.error?.message || error.response?.data?.detail || 'Failed to send OTP';
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -62,15 +57,15 @@ export default function FarmerLogin() {
     try {
       const response = await farmerApi.verifyOtp(mobile, enteredOtp);
       const data = (response as any).data?.data || (response as any).data;
-      if (data.accessToken) {
+      if (data?.accessToken) {
         login(data.accessToken, data.refreshToken);
         toast.success('Login successful!');
         navigate('/farmer/dashboard', { replace: true });
-      } else {
-        throw new Error('No token received');
+        return;
       }
+      throw new Error('No token received');
     } catch (error: any) {
-      const msg = error.response?.data?.error?.message || error.response?.data?.error || 'Invalid OTP';
+      const msg = error.response?.data?.error?.message || error.response?.data?.detail || 'Invalid OTP';
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -111,21 +106,22 @@ export default function FarmerLogin() {
                   exit={{ opacity: 0, y: -10 }}
                   className="space-y-6"
                 >
-                  <div className="space-y-1.5">
-                    <label className="text-[13px] font-bold text-[#1a1a1a]">Registered Mobile Number</label>
-                    <div className="flex gap-2">
-                      <div className="h-[48px] px-3 bg-[#f0fdf4] border border-[#d1d5db] rounded-lg flex items-center justify-center font-bold text-[#1a6b3c] text-sm">
-                        +91
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[13px] font-bold text-[#1a1a1a]">Registered Mobile Number</label>
+                      <div className="flex gap-2">
+                        <div className="h-[48px] px-3 bg-[#f0fdf4] border border-[#d1d5db] rounded-lg flex items-center justify-center font-bold text-[#1a6b3c] text-sm">
+                          +91
+                        </div>
+                        <input
+                          type="tel"
+                          maxLength={10}
+                          value={mobile}
+                          onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+                          placeholder="Enter mobile number"
+                          className="gov-input h-[48px] text-lg font-semibold tracking-wider"
+                        />
                       </div>
-                      <input
-                        type="tel"
-                        maxLength={10}
-                        value={mobile}
-                        onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
-                        placeholder="Enter mobile number"
-                        className="gov-input h-[48px] text-lg font-semibold tracking-wider"
-                        autoFocus
-                      />
                     </div>
                   </div>
                   
@@ -139,9 +135,14 @@ export default function FarmerLogin() {
                     Send OTP
                   </GovButton>
 
-                  <p className="text-center text-[13px] text-[#6b7280]">
-                    New farmer? <Link to="/register" className="text-primary font-bold hover:underline">Register via CSC</Link>
-                  </p>
+                  <div className="flex flex-col items-center gap-2">
+                    <Link to="/forgot-udlrn" className="text-[13px] font-bold text-[#1a6b3c] hover:underline">
+                      Forgot UDLRN?
+                    </Link>
+                    <p className="text-center text-[13px] text-[#6b7280]">
+                      New farmer? <Link to="/register" className="text-primary font-bold hover:underline">Register via CSC</Link>
+                    </p>
+                  </div>
                 </motion.div>
               ) : (
                 <motion.div

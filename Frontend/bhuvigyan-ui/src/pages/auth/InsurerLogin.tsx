@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Building2, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -18,6 +19,7 @@ export default function InsurerLogin() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogin = async () => {
     if (!code || !password) {
@@ -27,11 +29,38 @@ export default function InsurerLogin() {
     setLoading(true);
     try {
       const response = await insurerApi.login(code, password);
-      const data = (response as any).data?.data || (response as any).data;
-      if (data?.accessToken) login(data.accessToken, data.refreshToken);
+      const responseData = response.data as any;
+      console.log('[InsurerLogin] response.data:', responseData);
+
+      // Backend returns { success: false, error: { message } } on failure
+      if (responseData?.success === false) {
+        const msg = responseData?.error?.message || responseData?.detail || 'Invalid credentials';
+        console.error('[InsurerLogin] Backend rejected login:', msg);
+        toast.error(msg);
+        return;
+      }
+
+      // Extract token from nested { data: { accessToken } } or flat structure
+      const payload = responseData?.data || responseData;
+      const accessToken = payload?.accessToken || payload?.access_token;
+      const refreshToken = payload?.refreshToken || payload?.refresh_token;
+
+      if (!accessToken) {
+        console.error('[InsurerLogin] No accessToken in response:', responseData);
+        toast.error('Login response missing token. Check console (F12).');
+        return;
+      }
+
+      login(accessToken, refreshToken || '', {
+        company: payload?.company || '',
+        fullName: payload?.fullName || code,
+      });
       toast.success('Login successful!');
-      window.location.href = '/insurer/dashboard';
+      setTimeout(() => {
+        navigate('/insurer/dashboard', { replace: true });
+      }, 100);
     } catch (error: any) {
+      console.error('[InsurerLogin] Login error:', error);
       const msg = error.response?.data?.error?.message || error.response?.data?.detail || error.response?.data?.message || 'Login failed';
       toast.error(msg);
     } finally {

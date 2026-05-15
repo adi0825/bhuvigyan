@@ -27,6 +27,7 @@ class SatelliteCache(Base):
     ndvi_values = Column(JSONB, nullable=True)
     mean_ndvi = Column(Numeric(5, 4), nullable=True)
     min_ndvi = Column(Numeric(5, 4), nullable=True)
+    cloud_cover_pct = Column(Numeric(5, 2), nullable=True)
     anomaly_detected = Column(Boolean, default=False)
     is_mock = Column(Boolean, default=False)
     cached_at = Column(DateTime, default=datetime.utcnow)

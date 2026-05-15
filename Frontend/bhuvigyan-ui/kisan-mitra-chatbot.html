@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Kisan Mitra – Farmer AI Assistant</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&f[]=general-sans@400,500,600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/lucide-static@latest/font/lucide.css"/>
+<style>
+/* ── Design Tokens ─────────────────────────────────────── */
+:root,[data-theme="light"]{
+  --color-bg:#f4f7f4;--color-surface:#ffffff;--color-surface-2:#f9fbf9;
+  --color-surface-offset:#edf3ed;--color-surface-dynamic:#dde8dd;
+  --color-divider:#d0dbd0;--color-border:#c4d0c4;
+  --color-text:#1a2e1a;--color-text-muted:#5a7a5a;--color-text-faint:#94a894;
+  --color-text-inverse:#f9fbf9;
+  --color-primary:#2e7d32;--color-primary-hover:#1b5e20;--color-primary-active:#104210;
+  --color-primary-highlight:#c8e6c9;
+  --color-success:#388e3c;--color-success-highlight:#c8e6c9;
+  --color-warning:#f57f17;--color-warning-highlight:#fff3e0;
+  --color-error:#c62828;--color-error-highlight:#ffebee;
+  --color-blue:#0277bd;--color-blue-highlight:#e1f5fe;
+  --color-gold:#f9a825;--color-gold-highlight:#fff8e1;
+  --shadow-sm:0 1px 3px rgba(20,60,20,.08);
+  --shadow-md:0 4px 14px rgba(20,60,20,.10);
+  --shadow-lg:0 12px 36px rgba(20,60,20,.14);
+  --radius-sm:.375rem;--radius-md:.5rem;--radius-lg:.75rem;--radius-xl:1rem;--radius-full:9999px;
+  --transition:180ms cubic-bezier(.16,1,.3,1);
+  --font-body:'Satoshi','General Sans',system-ui,sans-serif;
+  --font-display:'General Sans','Satoshi',system-ui,sans-serif;
+  --text-xs:clamp(.75rem,.7rem + .25vw,.875rem);
+  --text-sm:clamp(.875rem,.8rem + .35vw,1rem);
+  --text-base:clamp(1rem,.95rem + .25vw,1.125rem);
+  --text-lg:clamp(1.125rem,1rem + .75vw,1.5rem);
+  --text-xl:clamp(1.5rem,1.2rem + 1.25vw,2.25rem);
+  --space-1:.25rem;--space-2:.5rem;--space-3:.75rem;--space-4:1rem;
+  --space-5:1.25rem;--space-6:1.5rem;--space-8:2rem;--space-10:2.5rem;
+  --space-12:3rem;--space-16:4rem;
+}
+[data-theme="dark"]{
+  --color-bg:#0f1a0f;--color-surface:#162016;--color-surface-2:#1c281c;
+  --color-surface-offset:#1a241a;--color-surface-dynamic:#243024;
+  --color-divider:#263026;--color-border:#344034;
+  --color-text:#c8dbc8;--color-text-muted:#6e8a6e;--color-text-faint:#4a5e4a;
+  --color-text-inverse:#162016;
+  --color-primary:#66bb6a;--color-primary-hover:#81c784;--color-primary-active:#a5d6a7;
+  --color-primary-highlight:#1b3a1b;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.25);
+  --shadow-md:0 4px 14px rgba(0,0,0,.35);
+  --shadow-lg:0 12px 36px rgba(0,0,0,.45);
+}
+
+/* ── Reset ─────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth}
+body{min-height:100dvh;font-family:var(--font-body);font-size:var(--text-base);
+  color:var(--color-text);background:var(--color-bg);overflow:hidden}
+img{display:block;max-width:100%}
+button{cursor:pointer;background:none;border:none;font:inherit;color:inherit}
+input,textarea{font:inherit;color:inherit}
+a,button,[role="button"]{transition:color var(--transition),background var(--transition),
+  border-color var(--transition),box-shadow var(--transition)}
+
+/* ── Layout ─────────────────────────────────────────────── */
+.app{display:grid;grid-template-columns:300px 1fr;height:100dvh}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.sidebar{background:var(--color-surface);border-right:1px solid var(--color-border);
+  display:flex;flex-direction:column;overflow:hidden}
+
+.sidebar-header{padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--color-divider);
+  display:flex;align-items:center;gap:var(--space-3)}
+.logo-mark{width:36px;height:36px;background:var(--color-primary);border-radius:var(--radius-md);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo-mark svg{width:20px;height:20px;color:white}
+.logo-text{font-family:var(--font-display);font-weight:700;font-size:var(--text-base);
+  color:var(--color-text);line-height:1.2}
+.logo-text span{display:block;font-size:var(--text-xs);color:var(--color-text-muted);
+  font-weight:400}
+
+/* Farmer Card */
+.farmer-card{margin:var(--space-4);padding:var(--space-4);
+  background:var(--color-surface-offset);border-radius:var(--radius-lg);
+  border:1px solid var(--color-border)}
+.farmer-avatar{width:44px;height:44px;border-radius:var(--radius-full);
+  background:var(--color-primary-highlight);display:flex;align-items:center;
+  justify-content:center;font-size:1.2rem;margin-bottom:var(--space-3)}
+.farmer-name{font-weight:600;font-size:var(--text-sm);color:var(--color-text)}
+.farmer-udlrm{font-size:var(--text-xs);color:var(--color-text-muted);
+  font-family:monospace;margin-top:2px}
+.farmer-badges{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3)}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px var(--space-2);
+  border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:500}
+.badge-green{background:var(--color-primary-highlight);color:var(--color-primary)}
+.badge-blue{background:var(--color-blue-highlight);color:var(--color-blue)}
+.badge-gold{background:var(--color-gold-highlight);color:var(--color-gold)}
+
+/* Farm Data */
+.sidebar-section{padding:0 var(--space-4) var(--space-2)}
+.sidebar-section-title{font-size:var(--text-xs);font-weight:600;color:var(--color-text-faint);
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:var(--space-3)}
+.data-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2)}
+.data-item{padding:var(--space-3);background:var(--color-surface-2);
+  border-radius:var(--radius-md);border:1px solid var(--color-divider)}
+.data-item-label{font-size:var(--text-xs);color:var(--color-text-muted);margin-bottom:2px}
+.data-item-value{font-size:var(--text-sm);font-weight:600;color:var(--color-text)}
+.data-item-value.green{color:var(--color-primary)}
+.data-item-value.gold{color:var(--color-gold)}
+.data-item-value.blue{color:var(--color-blue)}
+
+/* Divider */
+.sidebar-divider{height:1px;background:var(--color-divider);margin:var(--space-3) var(--space-4)}
+
+/* Quick Prompts */
+.quick-prompts{padding:0 var(--space-4);flex:1;overflow-y:auto}
+.quick-prompt-btn{width:100%;text-align:left;padding:var(--space-3) var(--space-3);
+  background:var(--color-surface-2);border:1px solid var(--color-divider);
+  border-radius:var(--radius-md);font-size:var(--text-xs);color:var(--color-text-muted);
+  cursor:pointer;margin-bottom:var(--space-2);transition:all var(--transition);
+  display:flex;align-items:center;gap:var(--space-2);line-height:1.4}
+.quick-prompt-btn:hover{background:var(--color-primary-highlight);
+  border-color:var(--color-primary);color:var(--color-primary)}
+.quick-prompt-btn .icon{font-size:.9rem;flex-shrink:0}
+
+/* Sidebar Footer */
+.sidebar-footer{padding:var(--space-3) var(--space-4);border-top:1px solid var(--color-divider);
+  display:flex;align-items:center;justify-content:space-between}
+.ollama-status{display:flex;align-items:center;gap:var(--space-2);
+  font-size:var(--text-xs);color:var(--color-text-muted)}
+.status-dot{width:8px;height:8px;border-radius:var(--radius-full);background:#ccc;flex-shrink:0}
+.status-dot.online{background:var(--color-primary);
+  box-shadow:0 0 0 2px var(--color-primary-highlight)}
+.status-dot.offline{background:var(--color-error)}
+.status-dot.checking{background:var(--color-gold);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Chat Area ───────────────────────────────────────────── */
+.chat-area{display:flex;flex-direction:column;height:100dvh;background:var(--color-bg)}
+
+.chat-header{padding:var(--space-4) var(--space-6);border-bottom:1px solid var(--color-border);
+  background:var(--color-surface);display:flex;align-items:center;
+  justify-content:space-between;flex-shrink:0}
+.chat-header-left{display:flex;align-items:center;gap:var(--space-3)}
+.chat-header-title{font-family:var(--font-display);font-weight:700;
+  font-size:var(--text-base);color:var(--color-text)}
+.chat-header-sub{font-size:var(--text-xs);color:var(--color-text-muted);margin-top:2px}
+.header-actions{display:flex;align-items:center;gap:var(--space-2)}
+.icon-btn{width:36px;height:36px;border-radius:var(--radius-md);display:flex;
+  align-items:center;justify-content:center;color:var(--color-text-muted);cursor:pointer}
+.icon-btn:hover{background:var(--color-surface-offset);color:var(--color-text)}
+.model-select{appearance:none;background:var(--color-surface-2);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);
+  font-size:var(--text-xs);color:var(--color-text-muted);cursor:pointer;
+  padding-right:var(--space-6)}
+
+/* Messages */
+.messages-container{flex:1;overflow-y:auto;padding:var(--space-6);
+  display:flex;flex-direction:column;gap:var(--space-4)}
+.messages-container::-webkit-scrollbar{width:4px}
+.messages-container::-webkit-scrollbar-track{background:transparent}
+.messages-container::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:var(--radius-full)}
+
+/* Welcome */
+.welcome-state{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;flex:1;text-align:center;padding:var(--space-8)}
+.welcome-icon{width:64px;height:64px;background:var(--color-primary-highlight);
+  border-radius:var(--radius-xl);display:flex;align-items:center;justify-content:center;
+  margin:0 auto var(--space-5);font-size:2rem}
+.welcome-title{font-family:var(--font-display);font-weight:700;font-size:var(--text-lg);
+  color:var(--color-text);margin-bottom:var(--space-2)}
+.welcome-sub{font-size:var(--text-sm);color:var(--color-text-muted);max-width:44ch;
+  line-height:1.7}
+
+/* Message Bubbles */
+.message{display:flex;gap:var(--space-3);max-width:820px;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.message.user{flex-direction:row-reverse;margin-left:auto}
+.message-avatar{width:34px;height:34px;border-radius:var(--radius-full);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.9rem;
+  background:var(--color-surface-offset)}
+.message.user .message-avatar{background:var(--color-primary);color:white}
+.message-body{display:flex;flex-direction:column;gap:4px;min-width:0}
+.message.user .message-body{align-items:flex-end}
+.message-bubble{padding:var(--space-3) var(--space-4);border-radius:var(--radius-lg);
+  font-size:var(--text-sm);line-height:1.7;max-width:620px;word-wrap:break-word}
+.message.assistant .message-bubble{background:var(--color-surface);
+  border:1px solid var(--color-border);border-radius:var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--radius-sm);
+  box-shadow:var(--shadow-sm)}
+.message.user .message-bubble{background:var(--color-primary);color:white;
+  border-radius:var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg)}
+.message-time{font-size:var(--text-xs);color:var(--color-text-faint);padding:0 var(--space-2)}
+.message-bubble p{margin-bottom:var(--space-2)}
+.message-bubble p:last-child{margin-bottom:0}
+.message-bubble ul,.message-bubble ol{margin:var(--space-2) 0 var(--space-2) var(--space-5);
+  display:flex;flex-direction:column;gap:var(--space-1)}
+.message-bubble strong{font-weight:600;color:var(--color-text)}
+.message.user .message-bubble strong{color:white}
+.message-bubble code{background:var(--color-surface-offset);padding:1px 5px;
+  border-radius:var(--radius-sm);font-size:.875em;font-family:monospace}
+.message-bubble pre{background:var(--color-surface-offset);padding:var(--space-3);
+  border-radius:var(--radius-md);overflow-x:auto;font-size:.85em;margin:var(--space-2) 0}
+
+/* Typing indicator */
+.typing-indicator{display:flex;align-items:center;gap:4px;padding:var(--space-3) var(--space-4)}
+.typing-dot{width:7px;height:7px;border-radius:var(--radius-full);
+  background:var(--color-text-muted);animation:typingBounce 1.2s ease-in-out infinite}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes typingBounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
+
+/* Info card in message */
+.info-card{background:var(--color-surface-offset);border:1px solid var(--color-border);
+  border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);margin:var(--space-2) 0}
+.info-card-title{font-size:var(--text-xs);font-weight:600;color:var(--color-text-muted);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:var(--space-2)}
+.info-card-row{display:flex;justify-content:space-between;align-items:center;
+  padding:var(--space-1) 0;border-bottom:1px solid var(--color-divider);font-size:var(--text-xs)}
+.info-card-row:last-child{border-bottom:none}
+.info-card-row span:last-child{font-weight:600;color:var(--color-text)}
+
+/* Input area */
+.input-area{padding:var(--space-4) var(--space-6);border-top:1px solid var(--color-border);
+  background:var(--color-surface);flex-shrink:0}
+.input-wrapper{display:flex;align-items:flex-end;gap:var(--space-3);
+  background:var(--color-surface-2);border:1.5px solid var(--color-border);
+  border-radius:var(--radius-xl);padding:var(--space-2) var(--space-3);
+  transition:border-color var(--transition),box-shadow var(--transition)}
+.input-wrapper:focus-within{border-color:var(--color-primary);
+  box-shadow:0 0 0 3px var(--color-primary-highlight)}
+.chat-input{flex:1;border:none;background:transparent;resize:none;
+  font-size:var(--text-sm);line-height:1.6;max-height:120px;padding:var(--space-2) 0;
+  outline:none;color:var(--color-text)}
+.chat-input::placeholder{color:var(--color-text-faint)}
+.send-btn{width:38px;height:38px;border-radius:var(--radius-md);
+  background:var(--color-primary);color:white;display:flex;align-items:center;
+  justify-content:center;flex-shrink:0;transition:all var(--transition)}
+.send-btn:hover{background:var(--color-primary-hover);transform:translateY(-1px)}
+.send-btn:active{transform:translateY(0)}
+.send-btn:disabled{background:var(--color-surface-dynamic);color:var(--color-text-faint);
+  cursor:not-allowed;transform:none}
+.input-hint{font-size:var(--text-xs);color:var(--color-text-faint);
+  text-align:center;margin-top:var(--space-2)}
+.input-hint a{color:var(--color-primary);text-decoration:none}
+
+/* Ollama setup banner */
+.setup-banner{background:var(--color-warning-highlight);border:1px solid #ffe082;
+  border-radius:var(--radius-lg);padding:var(--space-4);margin:var(--space-4);
+  font-size:var(--text-xs);color:#5f3a00;line-height:1.7}
+.setup-banner strong{display:block;margin-bottom:var(--space-2);
+  font-size:var(--text-sm);color:#3e2600}
+.setup-banner code{background:rgba(0,0,0,.08);padding:2px 6px;
+  border-radius:var(--radius-sm);font-family:monospace;font-size:.9em}
+.setup-banner ul{margin-left:var(--space-4);margin-top:var(--space-2)}
+
+/* Theme toggle */
+.theme-toggle-btn{width:34px;height:34px;border-radius:var(--radius-md);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--color-text-muted);transition:all var(--transition)}
+.theme-toggle-btn:hover{background:var(--color-surface-offset);color:var(--color-text)}
+
+/* Clear btn */
+.clear-btn{font-size:var(--text-xs);color:var(--color-text-muted);padding:var(--space-1) var(--space-2);
+  border-radius:var(--radius-sm);transition:all var(--transition)}
+.clear-btn:hover{background:var(--color-surface-offset);color:var(--color-text)}
+
+/* Scrollbar for sidebar */
+.quick-prompts::-webkit-scrollbar{width:3px}
+.quick-prompts::-webkit-scrollbar-thumb{background:var(--color-border);border-radius:var(--radius-full)}
+
+/* ── Responsive ─────────────────────────────────────────── */
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}
+  .sidebar{display:none}
+}
+
+/* ── Loading overlay ──────────────────────────────────────── */
+.context-chip{display:inline-flex;align-items:center;gap:4px;padding:2px var(--space-2);
+  background:var(--color-blue-highlight);color:var(--color-blue);
+  border-radius:var(--radius-full);font-size:var(--text-xs);font-weight:500;
+  margin-right:4px;margin-bottom:4px}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ── SIDEBAR ──────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2C6 2 3 8 3 12c0 2.5 1 5 3 7"/>
+          <path d="M12 2c6 0 9 6 9 10 0 2.5-1 5-3 7"/>
+          <path d="M12 22V10"/>
+          <path d="M7 15l5-5 5 5"/>
+        </svg>
+      </div>
+      <div class="logo-text">Kisan Mitra<span>Your Farm AI Assistant</span></div>
+    </div>
+
+    <!-- Farmer Card -->
+    <div class="farmer-card" id="farmer-card">
+      <div class="farmer-avatar">🧑‍🌾</div>
+      <div class="farmer-name" id="farmer-name-display">Loading farmer data…</div>
+      <div class="farmer-udlrm" id="farmer-udlrm-display">UDLRM-—</div>
+      <div class="farmer-badges" id="farmer-badges">
+        <span class="badge badge-green">🌿 Healthy Crop</span>
+        <span class="badge badge-blue">📋 Under Review</span>
+      </div>
+    </div>
+
+    <!-- Farm Data -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Farm Overview</div>
+      <div class="data-grid">
+        <div class="data-item">
+          <div class="data-item-label">Land Area</div>
+          <div class="data-item-value blue" id="data-area">2.4 ha</div>
+        </div>
+        <div class="data-item">
+          <div class="data-item-label">NDVI</div>
+          <div class="data-item-value green" id="data-ndvi">0.68</div>
+        </div>
+        <div class="data-item">
+          <div class="data-item-label">Soil Moisture</div>
+          <div class="data-item-value blue" id="data-moisture">42%</div>
+        </div>
+        <div class="data-item">
+          <div class="data-item-label">Fraud Risk</div>
+          <div class="data-item-value green" id="data-risk">Low (12)</div>
+        </div>
+        <div class="data-item">
+          <div class="data-item-label">Crop Coverage</div>
+          <div class="data-item-value green" id="data-coverage">87%</div>
+        </div>
+        <div class="data-item">
+          <div class="data-item-label">Crop Type</div>
+          <div class="data-item-value" id="data-crop">Paddy</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <!-- Quick Prompts -->
+    <div class="quick-prompts">
+      <div class="sidebar-section-title" style="padding:0 0 var(--space-2)">Quick Questions</div>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('What is the current health of my crop?')">
+        <span class="icon">🌾</span> What is the current health of my crop?
+      </button>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('Explain my NDVI value in simple terms')">
+        <span class="icon">📊</span> Explain my NDVI value in simple terms
+      </button>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('What does soil moisture of 42% mean for my farm?')">
+        <span class="icon">💧</span> What does my soil moisture mean?
+      </button>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('Is my farm eligible for PMFBY crop insurance?')">
+        <span class="icon">🛡️</span> Am I eligible for PMFBY insurance?
+      </button>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('What actions should I take to improve my crop yield this season?')">
+        <span class="icon">📈</span> How can I improve my yield?
+      </button>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('What is my application status and what are the next steps?')">
+        <span class="icon">📋</span> What is my application status?
+      </button>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('Show me a summary of all my farm data')">
+        <span class="icon">🗂️</span> Show a summary of all my farm data
+      </button>
+      <button class="quick-prompt-btn" onclick="sendQuickPrompt('When was the last satellite check done on my farm?')">
+        <span class="icon">🛰️</span> When was last satellite check?
+      </button>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <div class="sidebar-footer">
+      <div class="ollama-status">
+        <div class="status-dot checking" id="status-dot"></div>
+        <span id="status-text">Checking Ollama…</span>
+      </div>
+      <button class="theme-toggle-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── CHAT AREA ────────────────────────────────────── -->
+  <main class="chat-area">
+    <header class="chat-header">
+      <div class="chat-header-left">
+        <div style="width:34px;height:34px;border-radius:var(--radius-full);
+          background:var(--color-primary-highlight);display:flex;align-items:center;
+          justify-content:center;font-size:1.1rem">🌱</div>
+        <div>
+          <div class="chat-header-title">Kisan Mitra</div>
+          <div class="chat-header-sub" id="header-sub">Your personal farm AI – runs 100% locally</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <select class="model-select" id="model-select" title="Select Ollama model">
+          <option value="qwen2.5:7b">qwen2.5:7b (default)</option>
+          <option value="llama3.2">llama3.2</option>
+          <option value="llama3.1">llama3.1</option>
+          <option value="mistral">mistral</option>
+          <option value="gemma3">gemma3</option>
+          <option value="phi3">phi3</option>
+          <option value="llama3.2:1b">llama3.2:1b (fast)</option>
+        </select>
+        <button class="clear-btn" onclick="clearChat()">Clear chat</button>
+      </div>
+    </header>
+
+    <!-- Setup Banner (hidden when Ollama is online) -->
+    <div class="setup-banner" id="setup-banner">
+      <strong>⚙️ Setup Required — Connect to Ollama (Local AI)</strong>
+      Kisan Mitra runs entirely on your computer for full data privacy. To activate:
+      <ul>
+        <li>1. Install Ollama: <code>https://ollama.com/download</code></li>
+        <li>2. Run in terminal: <code>ollama serve</code></li>
+        <li>3. Pull model: <code>ollama pull qwen2.5:7b</code></li>
+        <li>4. Enable CORS: set env <code>OLLAMA_ORIGINS=*</code> then restart Ollama</li>
+      </ul>
+      <br/>Once running, this banner will disappear automatically and you can start chatting.
+    </div>
+
+    <!-- Messages -->
+    <div class="messages-container" id="messages-container">
+      <div class="welcome-state" id="welcome-state">
+        <div class="welcome-icon">🌾</div>
+        <div class="welcome-title">Namaste! I'm Kisan Mitra</div>
+        <div class="welcome-sub">
+          I have full access to your farm data, satellite analysis, and application status.
+          Ask me anything about your land, crop health, or PMFBY insurance — in plain, simple language.
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea id="chat-input" class="chat-input" rows="1"
+          placeholder="Ask about your crop, farm, insurance… (Enter to send)"
+          aria-label="Type your message"></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()" aria-label="Send message" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+        </button>
+      </div>
+      <div class="input-hint">
+        All conversations stay on your device. Powered by <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> — no internet required.
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── Configuration ─────────────────────────────────────
+const API_BASE = window.location.origin.includes('3000')
+  ? 'http://localhost:8000/api/v1'
+  : 'http://localhost:8000/api/v1';
+const OLLAMA_BASE = 'http://localhost:11434';
+
+// Read auth token from localStorage (set by React app)
+function getToken() {
+  return localStorage.getItem('accessToken') || localStorage.getItem('token') || '';
+}
+function getUserId() {
+  return localStorage.getItem('userId') || '';
+}
+
+// ── Demo fallback data ────────────────────────────────
+const DEMO_FARMER = {
+  name: 'Demo Farmer',
+  mobile: '—',
+  udlrm: '—',
+  dob: '—',
+  gender: '—',
+  aadhaar: '—',
+  language: 'English',
+  state: '—', district: '—', taluk: '—', village: '—',
+  surveyNo: '—', lat: '—', lng: '—',
+  area: '—', landUse: '—', rtcStatus: '—',
+  cropType: '—', ndvi: '—', cropHealth: '—',
+  soilMoisture: '—', cropCoverage: '—',
+  fraudScore: '—', anomaly: '—', sarStatus: '—',
+  lastSatellite: '—', baseline: '—',
+  appStatus: '—', bankName: '—',
+  docsUploaded: [], claims: [],
+  floodDetected: false, fireDetected: false,
+  ndviLabel: '—', moistureLabel: '—',
+  satelliteTile: '', ndviTile: '',
+  fraudRisk: '—', fraudScoreNum: 0,
+};
+
+let FARMER = { ...DEMO_FARMER };
+let farmerDataLoaded = false;
+
+// ── API helpers ───────────────────────────────────────
+async function apiGet(path) {
+  const token = getToken();
+  const res = await fetch(API_BASE + path, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── Load real farmer data ─────────────────────────────
+async function loadFarmerData() {
+  const token = getToken();
+  const userId = getUserId();
+  if (!token) {
+    console.log('Kisan Mitra: No auth token found, using demo data');
+    updateSidebar();
+    return;
+  }
+
+  try {
+    // Fetch profile
+    let profile = {};
+    try { profile = (await apiGet('/farmer/profile')).data || {}; } catch (e) { console.log('profile fetch:', e.message); }
+
+    // Fetch land
+    let land = {};
+    try { land = (await apiGet('/farmer/land')).data || {}; } catch (e) { console.log('land fetch:', e.message); }
+
+    // Fetch satellite summary
+    let sat = {};
+    try { sat = (await apiGet('/farmer/satellite')).data || {}; } catch (e) { console.log('satellite fetch:', e.message); }
+
+    // Fetch full satellite analysis
+    let satAnalysis = {};
+    if (userId) {
+      try {
+        const sa = await apiGet(`/satellite/farm/${userId}?_cb=${Date.now()}`);
+        satAnalysis = sa.data?.satellite_analysis || {};
+      } catch (e) { console.log('sat analysis fetch:', e.message); }
+    }
+
+    // Fetch claims
+    let claims = [];
+    try { claims = (await apiGet('/farmer/claims')).data || []; } catch (e) { console.log('claims fetch:', e.message); }
+
+    // Merge into FARMER object
+    const ndviData = satAnalysis.ndvi || sat.ndvi || {};
+    const ndwiData = satAnalysis.ndwi || sat.ndwi || {};
+    const sarData = satAnalysis.sar_flood || {};
+    const fireData = satAnalysis.fire_alerts || {};
+
+    FARMER = {
+      name: profile.full_name || profile.name || 'Farmer',
+      mobile: profile.mobile || '—',
+      udlrm: profile.udlrn || land.udlrn || '—',
+      dob: profile.dob || '—',
+      gender: profile.gender || '—',
+      aadhaar: profile.aadhaar ? 'XXXX-XXXX-' + profile.aadhaar.slice(-4) : '—',
+      language: profile.language || 'English',
+      state: land.state || profile.state_code || '—',
+      district: land.district || profile.district || '—',
+      taluk: land.taluk || profile.taluk || '—',
+      village: land.village || profile.village || '—',
+      surveyNo: land.survey_number || '—',
+      lat: land.latitude || profile.latitude || '—',
+      lng: land.longitude || profile.longitude || '—',
+      area: land.land_area || profile.land_area || '—',
+      landUse: land.land_use || 'Agricultural',
+      rtcStatus: land.rtc_status || 'Verified',
+      cropType: land.crop_name || profile.crop_name || '—',
+      ndvi: ndviData.ndvi != null ? ndviData.ndvi : '—',
+      ndviLabel: ndviData.health_label || '—',
+      cropHealth: ndviData.health_label || '—',
+      soilMoisture: ndwiData.ndwi != null ? ndwiData.ndwi : '—',
+      moistureLabel: ndwiData.label || ndwiData.moisture_status || '—',
+      cropCoverage: sat.crop_coverage || '—',
+      fraudScore: sat.fraud_score != null ? sat.fraud_score : '—',
+      fraudScoreNum: sat.fraud_score || 0,
+      fraudRisk: sat.fraud_risk || '—',
+      anomaly: sat.anomaly || 'None Detected',
+      sarStatus: sarData.flood_detected != null ? (sarData.flood_detected ? 'Flood Alert' : 'Normal') : '—',
+      floodDetected: !!sarData.flood_detected,
+      fireDetected: !!fireData.fire_detected,
+      lastSatellite: ndviData.scan_date || sat.computed_at || '—',
+      baseline: sat.baseline_match || 'Agricultural land confirmed',
+      appStatus: profile.app_status || 'Registered',
+      bankName: profile.bank_name || '—',
+      docsUploaded: profile.documents || [],
+      claims: Array.isArray(claims) ? claims : [],
+      satelliteTile: satAnalysis.satellite_tile?.tile_url || '',
+      ndviTile: satAnalysis.ndvi_tile?.tile_url || '',
+      thumbnailB64: satAnalysis.thumbnail_b64 || '',
+    };
+
+    farmerDataLoaded = true;
+    console.log('Kisan Mitra: Real farmer data loaded');
+  } catch (err) {
+    console.error('Kisan Mitra: Failed to load farmer data:', err);
+  }
+
+  updateSidebar();
+}
+
+// ── Update Sidebar with real data ─────────────────────
+function updateSidebar() {
+  document.getElementById('farmer-name-display').textContent = FARMER.name;
+  document.getElementById('farmer-udlrm-display').textContent = FARMER.udlrm;
+  document.getElementById('data-area').textContent = FARMER.area + (FARMER.area !== '—' ? ' ha' : '');
+  document.getElementById('data-ndvi').textContent = typeof FARMER.ndvi === 'number' ? FARMER.ndvi.toFixed(2) : FARMER.ndvi;
+  document.getElementById('data-moisture').textContent = typeof FARMER.soilMoisture === 'number' ? FARMER.soilMoisture.toFixed(2) : FARMER.soilMoisture;
+  document.getElementById('data-risk').textContent = FARMER.fraudRisk !== '—' ? `${FARMER.fraudRisk} (${FARMER.fraudScore})` : '—';
+  document.getElementById('data-coverage').textContent = FARMER.cropCoverage !== '—' ? FARMER.cropCoverage + '%' : '—';
+  document.getElementById('data-crop').textContent = FARMER.cropType;
+
+  // Update badges based on real data
+  const badgeContainer = document.getElementById('farmer-badges');
+  let badgesHtml = '';
+  if (farmerDataLoaded) {
+    const ndviNum = typeof FARMER.ndvi === 'number' ? FARMER.ndvi : parseFloat(FARMER.ndvi);
+    if (!isNaN(ndviNum)) {
+      badgesHtml += ndviNum >= 0.6 ? '<span class="badge badge-green">🌿 Healthy Crop</span>' :
+                    ndviNum >= 0.4 ? '<span class="badge badge-gold">⚠️ Moderate</span>' :
+                    '<span class="badge badge-blue">🔍 Needs Attention</span>';
+    }
+    if (FARMER.fraudScoreNum !== '—' && FARMER.fraudScoreNum <= 30) {
+      badgesHtml += '<span class="badge badge-green">✅ Verified</span>';
+    } else if (FARMER.fraudScoreNum > 30) {
+      badgesHtml += '<span class="badge badge-gold">⚠️ Review</span>';
+    }
+    if (FARMER.floodDetected) {
+      badgesHtml += '<span class="badge badge-blue">🌊 Flood Alert</span>';
+    }
+    if (FARMER.fireDetected) {
+      badgesHtml += '<span class="badge badge-gold">🔥 Fire Alert</span>';
+    }
+  } else {
+    badgesHtml = '<span class="badge badge-green">🌿 Healthy Crop</span><span class="badge badge-blue">📋 Under Review</span>';
+  }
+  badgeContainer.innerHTML = badgesHtml;
+}
+
+// Start loading immediately
+loadFarmerData();
+
+// ── System Prompt ─────────────────────────────────────
+function buildSystemPrompt() {
+  const ndviVal = typeof FARMER.ndvi === 'number' ? FARMER.ndvi.toFixed(2) : FARMER.ndvi;
+  const ndwiVal = typeof FARMER.soilMoisture === 'number' ? FARMER.soilMoisture.toFixed(2) : FARMER.soilMoisture;
+  const hasRealData = farmerDataLoaded;
+
+  return `You are Kisan Mitra, a friendly and simple AI assistant for Indian farmers. You are currently helping farmer ${FARMER.name}.
+Speak simply and clearly. Use everyday language. Be warm, helpful, and supportive.
+If asked in Hindi or Kannada, reply in that language.
+
+${hasRealData ? '=== REAL FARMER DATA (from Bhuvigyan system) ===' : '=== DEMO DATA (login to see real data) ==='}
+
+--- PROFILE ---
+Name: ${FARMER.name}
+UDLRN: ${FARMER.udlrm}
+Mobile: ${FARMER.mobile}
+Aadhaar: ${FARMER.aadhaar}
+Language: ${FARMER.language}
+
+--- LAND ---
+State: ${FARMER.state}
+District: ${FARMER.district}
+Taluk: ${FARMER.taluk}
+Village: ${FARMER.village}
+Survey Number: ${FARMER.surveyNo}
+Coordinates: ${FARMER.lat}, ${FARMER.lng}
+Land Area: ${FARMER.area} ha
+Crop Type: ${FARMER.cropType}
+
+--- SATELLITE ANALYSIS ---
+NDVI: ${ndviVal} (0 = bare soil, 1 = dense vegetation. Above 0.6 excellent, 0.4-0.6 moderate, below 0.4 needs attention)
+Crop Health: ${FARMER.cropHealth}
+NDWI (Soil Moisture): ${ndwiVal} — ${FARMER.moistureLabel}
+Crop Coverage: ${FARMER.cropCoverage}%
+Fraud Score: ${FARMER.fraudScore}/100 — Risk: ${FARMER.fraudRisk}
+SAR Flood Status: ${FARMER.sarStatus}
+Fire Detected: ${FARMER.fireDetected ? 'YES' : 'No'}
+Last Satellite Scan: ${FARMER.lastSatellite}
+Baseline: ${FARMER.baseline}
+
+--- APPLICATION ---
+Status: ${FARMER.appStatus}
+Bank: ${FARMER.bankName}
+Documents: ${FARMER.docsUploaded.join(', ') || 'None recorded'}
+Claims: ${FARMER.claims.length > 0 ? FARMER.claims.map(c => c.claim_number || c.id).join(', ') : 'No claims filed'}
+
+--- INSTRUCTIONS ---
+- Always refer to the farmer by their first name warmly.
+- Explain NDVI simply: above 0.6 = very healthy crop, 0.4-0.6 = okay but watch, below 0.4 = problem, needs action.
+- Explain NDWI: positive = good water content, near 0 = dry, negative = very dry/stressed.
+- For insurance: farmer is eligible for PMFBY if land is verified agricultural and fraud score is low (under 30).
+- Reassure about fraud score: low means everything is verified and correct.
+- Keep responses concise — max 4-5 sentences unless the farmer asks for more detail.
+- Use bullet points for lists.
+- Do NOT make up data not listed above.
+- If asked something you don't know from the data, say so honestly.
+- Today's date is May 14, 2026.`;
+}
+
+// ── Chat State ────────────────────────────────────────
+let messages = [];
+let isStreaming = false;
+
+// ── DOM refs ──────────────────────────────────────────
+const msgContainer = document.getElementById('messages-container');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+const welcomeState = document.getElementById('welcome-state');
+const setupBanner = document.getElementById('setup-banner');
+
+// ── Ollama status check ───────────────────────────────
+let ollamaOnline = false;
+async function checkOllama() {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  const sub = document.getElementById('header-sub');
+  try {
+    const r = await fetch(OLLAMA_BASE + '/api/tags', {signal: AbortSignal.timeout(3000)});
+    if (r.ok) {
+      const data = await r.json();
+      ollamaOnline = true;
+      dot.className = 'status-dot online';
+      txt.textContent = 'Ollama connected';
+      sub.textContent = 'Private AI running locally — no internet';
+      setupBanner.style.display = 'none';
+      sendBtn.disabled = false;
+      // Populate model list
+      const sel = document.getElementById('model-select');
+      if (data.models && data.models.length) {
+        sel.innerHTML = '';
+        data.models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.name;
+          opt.textContent = m.name;
+          sel.appendChild(opt);
+        });
+        // Auto-select qwen2.5:7b if available
+        const qwenOpt = Array.from(sel.options).find(o => o.value.includes('qwen2.5'));
+        if (qwenOpt) sel.value = qwenOpt.value;
+      }
+    } else { throw new Error(); }
+  } catch {
+    ollamaOnline = false;
+    dot.className = 'status-dot offline';
+    txt.textContent = 'Ollama offline';
+    sub.textContent = 'Start Ollama locally to enable AI chat';
+    setupBanner.style.display = 'block';
+    sendBtn.disabled = true;
+  }
+}
+checkOllama();
+setInterval(checkOllama, 8000);
+
+// ── Input auto-resize ─────────────────────────────────
+chatInput.addEventListener('input', function(){
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  sendBtn.disabled = !this.value.trim() || isStreaming || !ollamaOnline;
+});
+chatInput.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendBtn.disabled) sendMessage(); }
+});
+
+// ── Render a message ──────────────────────────────────
+function renderMessage(role, content, streaming=false) {
+  if (welcomeState.parentNode) welcomeState.remove();
+
+  const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  const wrap = document.createElement('div');
+  wrap.className = 'message ' + role;
+  wrap.id = id;
+
+  const now = new Date().toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'});
+
+  wrap.innerHTML = `
+    <div class="message-avatar">${role === 'user' ? '🧑‍🌾' : '🌱'}</div>
+    <div class="message-body">
+      <div class="message-bubble" id="bubble-${id}"></div>
+      <div class="message-time">${now}</div>
+    </div>`;
+
+  msgContainer.appendChild(wrap);
+  scrollToBottom();
+
+  if (!streaming) {
+    document.getElementById('bubble-' + id).innerHTML = formatMarkdown(content);
+  }
+  return id;
+}
+
+function renderTyping() {
+  const id = 'typing-' + Date.now();
+  const wrap = document.createElement('div');
+  wrap.className = 'message assistant';
+  wrap.id = id;
+  wrap.innerHTML = `
+    <div class="message-avatar">🌱</div>
+    <div class="message-body">
+      <div class="message-bubble">
+        <div class="typing-indicator">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+      </div>
+    </div>`;
+  msgContainer.appendChild(wrap);
+  scrollToBottom();
+  return id;
+}
+
+// ── Markdown formatter (simple) ───────────────────────
+function formatMarkdown(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/^### (.+)$/gm,'<h4 style="margin:.5rem 0 .25rem;font-size:var(--text-sm);font-weight:700">$1</h4>')
+    .replace(/^## (.+)$/gm,'<h3 style="margin:.5rem 0 .25rem;font-size:var(--text-base);font-weight:700">$1</h3>')
+    .replace(/^\- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)/gm,'<ul>$1</ul>')
+    .replace(/<\/ul>\s*<ul>/g,'')
+    .replace(/^\d+\. (.+)$/gm,'<li>$1</li>')
+    .replace(/\n{2,}/g,'</p><p>')
+    .replace(/\n/g,'<br/>')
+    .replace(/^(.)/,'<p>$1')
+    .replace(/(.)$/, '$1</p>');
+}
+
+function scrollToBottom() {
+  setTimeout(() => msgContainer.scrollTop = msgContainer.scrollHeight, 50);
+}
+
+// ── Send message ──────────────────────────────────────
+async function sendMessage(customText) {
+  const text = customText || chatInput.value.trim();
+  if (!text || isStreaming) return;
+
+  chatInput.value = '';
+  chatInput.style.height = 'auto';
+  sendBtn.disabled = true;
+  isStreaming = true;
+
+  messages.push({role:'user', content: text});
+  renderMessage('user', text);
+
+  const typingId = renderTyping();
+
+  try {
+    const model = document.getElementById('model-select').value;
+    const payload = {
+      model,
+      messages: [
+        {role:'system', content: buildSystemPrompt()},
+        ...messages.slice(-12) // last 12 turns for context window
+      ],
+      stream: true
+    };
+
+    const response = await fetch(OLLAMA_BASE + '/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) throw new Error('Ollama error: ' + response.status);
+
+    document.getElementById(typingId)?.remove();
+    const msgId = renderMessage('assistant', '', true);
+    const bubble = document.getElementById('bubble-' + msgId);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, {stream:true});
+      const lines = chunk.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        try {
+          const json = JSON.parse(line);
+          if (json.message?.content) {
+            fullText += json.message.content;
+            bubble.innerHTML = formatMarkdown(fullText);
+            scrollToBottom();
+          }
+        } catch {}
+      }
+    }
+
+    messages.push({role:'assistant', content: fullText});
+
+  } catch(err) {
+    document.getElementById(typingId)?.remove();
+    const errMsg = err.message.includes('Failed to fetch')
+      ? 'Could not reach Ollama. Please make sure Ollama is running on your computer with CORS enabled (`OLLAMA_ORIGINS=*`).'
+      : 'Error: ' + err.message;
+    renderMessage('assistant', '⚠️ ' + errMsg);
+  } finally {
+    isStreaming = false;
+    sendBtn.disabled = !chatInput.value.trim() || !ollamaOnline;
+  }
+}
+
+function sendQuickPrompt(text) {
+  if (!ollamaOnline) {
+    alert('Please start Ollama first. See the setup instructions above.');
+    return;
+  }
+  chatInput.value = text;
+  sendMessage(text);
+}
+
+function clearChat() {
+  messages = [];
+  msgContainer.innerHTML = '';
+  const ws = document.createElement('div');
+  ws.className = 'welcome-state';
+  ws.id = 'welcome-state';
+  ws.innerHTML = `
+    <div class="welcome-icon">🌾</div>
+    <div class="welcome-title">Namaste! I'm Kisan Mitra</div>
+    <div class="welcome-sub">
+      I have full access to your farm data, satellite analysis, and application status.
+      Ask me anything about your land, crop health, or PMFBY insurance — in plain, simple language.
+    </div>`;
+  msgContainer.appendChild(ws);
+}
+
+// ── Theme Toggle ──────────────────────────────────────
+(function(){
+  const root = document.documentElement;
+  const btn = document.getElementById('theme-toggle');
+  let dark = matchMedia('(prefers-color-scheme:dark)').matches;
+  root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  function updateIcon() {
+    btn.innerHTML = dark
+      ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }
+  updateIcon();
+  btn.addEventListener('click', () => {
+    dark = !dark;
+    root.setAttribute('data-theme', dark ? 'dark' : 'light');
+    updateIcon();
+  });
+})();
+</script>
+</body>
+</html>

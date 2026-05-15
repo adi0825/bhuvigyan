@@ -26,7 +26,8 @@ class SatelliteCache:
         data = await redis_client.get(key)
         if data:
             result = json.loads(data)
-            result["cached"] = True
+            if isinstance(result, dict):
+                result["cached"] = True
             return result
         return None
 

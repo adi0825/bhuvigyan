@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Building2, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -21,6 +22,7 @@ export default function CscLogin() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogin = async () => {
     if (!cscId || !password) {
@@ -31,11 +33,35 @@ export default function CscLogin() {
     setLoading(true);
     try {
       const response = await cscApi.login(cscId, password, '123456');
-      const data = response.data?.data || response.data;
-      login(data.accessToken, data.refreshToken);
+      const responseData = response.data as any;
+      console.log('[CscLogin] response.data:', responseData);
+
+      if (responseData?.success === false) {
+        const msg = responseData?.error?.message || responseData?.detail || 'Invalid credentials';
+        console.error('[CscLogin] Backend rejected login:', msg);
+        toast.error(msg);
+        return;
+      }
+
+      const payload = responseData?.data || responseData;
+      const accessToken = payload?.accessToken || payload?.access_token;
+      const refreshToken = payload?.refreshToken || payload?.refresh_token;
+
+      if (!accessToken) {
+        console.error('[CscLogin] No accessToken in response:', responseData);
+        toast.error('Login response missing token. Check console (F12).');
+        return;
+      }
+
+      login(accessToken, refreshToken || '', {
+        fullName: payload?.fullName || cscId,
+      });
       toast.success('Login successful!');
-      window.location.href = '/csc/dashboard';
+      setTimeout(() => {
+        navigate('/csc/dashboard', { replace: true });
+      }, 100);
     } catch (error: any) {
+      console.error('[CscLogin] Login error:', error);
       let errorMessage = 'Login failed';
       if (!error.response) {
         errorMessage = 'Backend services not reachable. Please start Java services.';

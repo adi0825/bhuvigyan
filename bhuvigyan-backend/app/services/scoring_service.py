@@ -190,6 +190,14 @@ async def score_claim(claim_id: str, db: AsyncSession, use_cpp: bool = True) -> 
             risk_level = "MEDIUM"
             claim_status = "OFFICER_REVIEW"
 
+        # 3b. Auto-approval gate checks — downgrade if any gate fails
+        if claim_status == "AUTO_APPROVED":
+            from app.services.claim_decision_service import check_auto_approval_gates
+            gate_result = await check_auto_approval_gates(claim_id, score, db)
+            if not gate_result["eligible"]:
+                risk_level = "MEDIUM"
+                claim_status = "OFFICER_REVIEW"
+
         # 4. Persist feature snapshot
         snapshot = FraudFeatureSnapshot(
             id=uuid4(),
@@ -234,6 +242,14 @@ async def score_claim(claim_id: str, db: AsyncSession, use_cpp: bool = True) -> 
             if claim_status in ("AUTO_APPROVED", "AUTO_REJECTED"):
                 claim.decided_at = datetime.utcnow()
 
+        # 7b. Trigger notification
+        try:
+            from app.services.notification_trigger_service import trigger_claim_notification
+            await trigger_claim_notification(claim_id, claim_status, db)
+        except Exception as e:
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning(f"Notification trigger failed: {e}")
+
         # 8. Persist scoring result
         latency_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         req.status = "COMPLETED"
@@ -261,6 +277,7 @@ async def score_claim(claim_id: str, db: AsyncSession, use_cpp: bool = True) -> 
                 "fallback_used": fallback_used,
                 "latency_ms": latency_ms,
                 "explanation": explanation_data,
+                "auto_approval_gates": gate_result if claim_status == "OFFICER_REVIEW" and score <= 30 else None,
             }
         }
 

@@ -24,15 +24,24 @@ export function useSatelliteData(farmerId: string | null): UseSatelliteDataResul
     setError(null);
     try {
       const res = await satelliteApi.getFarmAnalysis(farmerId);
-      const payload = res.data;
-      if (payload.data) {
-        // Handle new backend response format with satellite_analysis nested
-        const backendData = payload.data;
+      const payload: any = res.data;
+
+      // Backend returns {success: false, error, message} on failure
+      if (payload?.success === false) {
+        setError(payload.message || payload.error || 'Satellite analysis failed');
+        setData(null);
+        setLoading(false);
+        return;
+      }
+
+      const backendData: any = payload?.data || payload;
+      console.log('[useSatelliteData] raw response:', payload);
+      console.log('[useSatelliteData] backendData:', backendData);
+      if (backendData) {
         const fireAlerts = backendData.satellite_analysis?.fire_alerts;
         const fireField = backendData.satellite_analysis?.fire;
         const flattened: SatelliteData = {
           ...backendData,
-          // Flatten satellite_analysis to root level for component compatibility
           ndvi: backendData.satellite_analysis?.ndvi,
           ndwi: backendData.satellite_analysis?.ndwi,
           sar_flood: backendData.satellite_analysis?.sar_flood,
@@ -55,7 +64,7 @@ export function useSatelliteData(farmerId: string | null): UseSatelliteDataResul
         setError('No satellite data available');
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to load satellite data';
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message || 'Failed to load satellite data';
       setError(msg);
     } finally {
       setLoading(false);

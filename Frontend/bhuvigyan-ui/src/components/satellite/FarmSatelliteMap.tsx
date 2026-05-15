@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
-import { Satellite, AlertTriangle, Layers } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polygon } from 'react-leaflet';
+import { Satellite, AlertTriangle } from 'lucide-react';
 import GovCard from '../ui/GovCard';
 import 'leaflet/dist/leaflet.css';
 
@@ -11,6 +11,8 @@ interface Props {
   zoom?: number;
   loading?: boolean;
   farmName?: string;
+  polygon?: number[][];
+  polygonAreaHa?: number;
 }
 
 type LayerMode = 'rgb' | 'ndvi' | 'osm';
@@ -22,6 +24,8 @@ export default function FarmSatelliteMap({
   zoom = 15,
   loading,
   farmName = 'Farm',
+  polygon,
+  polygonAreaHa,
 }: Props) {
   const [mode, setMode] = useState<LayerMode>('rgb');
   const [hasError, setHasError] = useState(false);
@@ -39,6 +43,11 @@ export default function FarmSatelliteMap({
     );
   }
 
+  // Guard against undefined coordinates
+  const lat = typeof center.lat === 'number' ? center.lat : null;
+  const lng = typeof center.lng === 'number' ? center.lng : null;
+  const hasCoords = lat !== null && lng !== null;
+
   const tileUrl =
     mode === 'rgb' && rgbTileUrl
       ? rgbTileUrl
@@ -54,7 +63,8 @@ export default function FarmSatelliteMap({
         <div>
           <h3 className="text-lg font-bold text-[#1a1a1a]">Farm Satellite Map</h3>
           <p className="text-xs text-[#6b7280]">
-            {center.lat.toFixed(4)}, {center.lng.toFixed(4)}
+            {hasCoords ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : 'Coordinates unavailable'}
+            {typeof polygonAreaHa === 'number' && <span className="ml-2">• {polygonAreaHa.toFixed(2)} ha</span>}
           </p>
         </div>
         <div className="flex items-center gap-1 bg-[#f3f4f6] rounded-lg p-1">
@@ -86,9 +96,16 @@ export default function FarmSatelliteMap({
         </div>
       )}
 
+      {!hasCoords && (
+        <div className="h-80 rounded-xl overflow-hidden border border-[#e5e7eb] flex items-center justify-center bg-gray-50 text-gray-500 text-sm">
+          <AlertTriangle className="w-5 h-5 mr-2" />
+          Farm coordinates unavailable. Cannot display map.
+        </div>
+      )}
+      {hasCoords && (
       <div className="h-80 rounded-xl overflow-hidden border border-[#e5e7eb]">
         <MapContainer
-          center={[center.lat, center.lng]}
+          center={[lat, lng]}
           zoom={zoom}
           scrollWheelZoom={false}
           style={{ height: '100%', width: '100%' }}
@@ -115,22 +132,35 @@ export default function FarmSatelliteMap({
               opacity={0.4}
             />
           )}
+          {polygon && polygon.length > 0 && (
+            <Polygon
+              positions={polygon}
+              pathOptions={{
+                color: '#1a6b3c',
+                fillColor: '#1a6b3c',
+                fillOpacity: 0.15,
+                weight: 2,
+              }}
+            />
+          )}
           <Circle
-            center={[center.lat, center.lng]}
+            center={[lat, lng]}
             radius={500}
             pathOptions={{ color: '#1a6b3c', fillColor: '#1a6b3c', fillOpacity: 0.08, weight: 1 }}
           />
-          <Marker position={[center.lat, center.lng]}>
+          <Marker position={[lat, lng]}>
             <Popup>
               <div className="text-sm font-semibold">{farmName}</div>
               <div className="text-xs text-[#6b7280]">
-                Lat: {center.lat.toFixed(5)}<br />
-                Lng: {center.lng.toFixed(5)}
+                Lat: {lat.toFixed(5)}<br />
+                Lng: {lng.toFixed(5)}<br />
+                {typeof polygonAreaHa === 'number' && <>Area: {polygonAreaHa.toFixed(2)} ha</>}
               </div>
             </Popup>
           </Marker>
         </MapContainer>
       </div>
+      )}
 
       <div className="flex items-center justify-between text-[11px] text-[#9ca3af]">
         <div className="flex items-center gap-1">

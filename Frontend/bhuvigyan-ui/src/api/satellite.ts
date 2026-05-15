@@ -108,10 +108,11 @@ export interface SatelliteData {
 }
 
 export interface TimeseriesPoint {
-  month: string;
+  month?: string;
+  date?: string;
   ndvi: number;
   label: string;
-  image_count: number;
+  image_count?: number;
 }
 
 export interface TileUrls {
@@ -155,25 +156,25 @@ export interface RegionAnalysis {
 
 export const satelliteApi = {
   getFarmAnalysis: (farmerId: string) =>
-    api.get<{ data: SatelliteData; cached?: boolean }>(`/satellite/farm/${farmerId}`),
+    api.get<{ data: SatelliteData; cached?: boolean }>(`/satellite/farm/${farmerId}?_cb=${Date.now()}`),
 
   getFarmTimeseries: (farmerId: string, months: number = 12) =>
     api.get<{ data: { timeseries: TimeseriesPoint[]; months: number }; cached?: boolean }>(`/satellite/farm/${farmerId}/timeseries`, {
-      params: { months },
+      params: { months, _cb: Date.now() },
     }),
 
   getFarmTiles: (farmerId: string) =>
-    api.get<{ data: TileUrls }>(`/satellite/farm/${farmerId}/tiles`),
+    api.get<{ data: TileUrls }>(`/satellite/farm/${farmerId}/tiles?_cb=${Date.now()}`),
 
   getFarmThumbnail: (farmerId: string) =>
-    api.get<{ data: ThumbnailResponse }>(`/satellite/farm/${farmerId}/thumbnail`),
+    api.get<{ data: ThumbnailResponse }>(`/satellite/farm/${farmerId}/thumbnail?_cb=${Date.now()}`),
 
   getFarmByUdlrn: (udlrn: string) =>
-    api.get<{ data: SatelliteData; cached?: boolean }>(`/satellite/udlrn/${udlrn}`),
+    api.get<{ data: SatelliteData; cached?: boolean }>(`/satellite/udlrn/${udlrn}?_cb=${Date.now()}`),
 
   getDirectThumbnail: (lat: number, lng: number, radiusM: number = 5000) =>
     api.get<{ data: ThumbnailResponse }>('/satellite/thumbnail', {
-      params: { lat, lng, radius_m: radiusM },
+      params: { lat, lng, radius_m: radiusM, _cb: Date.now() },
     }),
 
   analyzeRegion: (state: string, district: string, startDate: string, endDate: string) =>
@@ -182,6 +183,7 @@ export const satelliteApi = {
       district,
       start_date: startDate,
       end_date: endDate,
+      _cb: Date.now(),
     }),
 
   getStates: () =>
@@ -191,8 +193,40 @@ export const satelliteApi = {
     api.get<{ data: string[]; state: string }>('/satellite/districts', { params: { state } }),
 
   getVisitBrief: (visitId: string) =>
-    api.get<{ data: SatelliteData }>(`/satellite/visit/${visitId}`),
+    api.get<{ data: SatelliteData }>(`/satellite/visit/${visitId}?_cb=${Date.now()}`),
 
   refreshCache: () =>
     api.post('/satellite/refresh'),
+
+  verifyLandSatellite: (lat: number, lng: number, startDate?: string, endDate?: string) =>
+    api.post<{ data: {
+      lat: number;
+      lng: number;
+      ndvi: number | null;
+      ndvi_label: string | null;
+      scan_date: string | null;
+      cloud_cover_pct: number | null;
+      soil_moisture: number | null;
+      moisture_label: string | null;
+      flood_detected: boolean | null;
+      flood_area_ha: number | null;
+      fire_detected: boolean | null;
+      hotspot_count: number | null;
+      thumbnail_b64: string;
+      satellite_tile: any;
+      ndvi_tile: any;
+      fraud_score: number;
+      fraud_risk: string;
+      crop_coverage: number | null;
+      baseline_match: string;
+      sar_status: string;
+      computed_at: string;
+      start_date: string;
+      end_date: string;
+    }; success: boolean; error?: string; message?: string }>('/satellite/verify', {
+      lat,
+      lng,
+      start_date: startDate,
+      end_date: endDate,
+    }),
 };

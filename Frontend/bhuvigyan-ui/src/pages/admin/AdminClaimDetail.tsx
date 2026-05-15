@@ -47,25 +47,44 @@ export default function AdminClaimDetail() {
       const res = await api.get(`/claims/${id}/dossier`);
       const data = res.data?.data;
       if (data) {
-        setClaim(data);
+        // Normalize nested dossier response into flat ClaimDetailData
+        const claimData = data.claim || {};
+        const farmerData = data.farmer || {};
+        const fraudData = data.fraud || {};
+        const evidence = data.evidence || [];
+        const normalized: ClaimDetailData = {
+          id: claimData.id || id || "c1",
+          claimNumber: claimData.claimNumber || "—",
+          farmerId: farmerData.id || "—",
+          farmerName: farmerData.fullName || "Unknown",
+          status: claimData.status || "SUBMITTED",
+          lossType: claimData.lossType || "—",
+          lossDate: claimData.lossDate || "—",
+          affectedArea: claimData.affectedArea ?? 0,
+          claimAmount: claimData.claimAmount ?? 0,
+          description: claimData.description || "—",
+          gps: claimData.gps || { lat: 0, lng: 0 },
+          filedAt: claimData.filedAt || new Date().toISOString(),
+          decidedAt: claimData.decidedAt,
+          fraudScore: fraudData.score ?? 0,
+          riskLevel: fraudData.riskLevel || "Low",
+          timeline: data.timeline || [
+            { status: claimData.status || "SUBMITTED", at: claimData.filedAt || new Date().toISOString(), note: "Claim submitted" }
+          ],
+          documents: evidence.map((e: any) => ({
+            type: e.fileName || "Document",
+            url: e.url || "#",
+            status: "uploaded",
+          })),
+          satellite: data.satellite || {
+            ndvi: data.satellite?.ndvi ?? 0,
+            weather: data.satellite?.weather || "—",
+            anomaly: data.satellite?.anomaly ?? false,
+          },
+        };
+        setClaim(normalized);
       } else {
-        setClaim({
-          id: id || "c1", claimNumber: "CLM-2026-001", farmerId: "1", farmerName: "Ramesh Kumar",
-          status: "SUBMITTED", lossType: "Drought", lossDate: "2026-05-10",
-          affectedArea: 2.5, claimAmount: 45000, description: "Severe drought across entire plot.",
-          gps: { lat: 13.1234, lng: 77.5678 }, filedAt: "2026-05-11T10:00:00Z",
-          fraudScore: 45, riskLevel: "Medium",
-          timeline: [
-            { status: "DRAFT", at: "2026-05-11T09:00:00Z", note: "Claim drafted by farmer" },
-            { status: "SUBMITTED", at: "2026-05-11T10:00:00Z", note: "Submitted for review" },
-          ],
-          documents: [
-            { type: "FIR Copy", url: "#", status: "verified" },
-            { type: "Crop Cutting Photo", url: "#", status: "verified" },
-            { type: "Bank Passbook", url: "#", status: "pending" },
-          ],
-          satellite: { ndvi: 0.28, weather: "Deficient", anomaly: true },
-        });
+        setClaim(null);
       }
     } catch { toast.error("Failed to load claim"); }
     finally { setLoading(false); }

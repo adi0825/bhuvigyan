@@ -13,6 +13,18 @@ router = APIRouter()
 @router.post("/login")
 async def csc_login(body: CSCLoginRequest, db: AsyncSession = Depends(get_db)):
     from app.config import settings
+    if settings.DEV_MODE:
+        token = create_csc_token("00000000-0000-0000-0000-000000000002", body.cscId)
+        refresh_token = create_refresh_token({"userId": "00000000-0000-0000-0000-000000000002", "cscId": body.cscId})
+        return {
+            "success": True,
+            "data": {
+                "accessToken": token,
+                "refreshToken": refresh_token,
+                "cscId": body.cscId,
+                "fullName": "Demo CSC Operator",
+            },
+        }
     result = await db.execute(select(CscOperator).where(CscOperator.csc_id == body.cscId))
     csc = result.scalar_one_or_none()
     if not csc:
@@ -119,6 +131,103 @@ async def csc_register_farmer(
         carbon_score=50,
     )
     db.add(udlrn_record)
+
+    # KGIS auto-approval check (same as farmer self-registration)
+    registration_status = "PENDING_ADMIN_REVIEW"
+    lat = body.get("latitude")
+    lng = body.get("longitude")
+    if lat and lng and farmer.village and farmer.district:
+        try:
+            from app.services.land_service import LandVerifier
+            lv = LandVerifier()
+            verify_result = await lv.verify_coordinates(float(lat), float(lng), farmer.village, farmer.district)
+            if verify_result.get("matches_declared"):
+                farmer.is_verified = True
+                if farmer.bank_account and farmer.bank_ifsc:
+                    registration_status = "AUTO_APPROVED"
+                else:
+                    registration_status = "PENDING_BANK_VERIFICATION"
+        except Exception:
+            pass
+
     await db.commit()
     otp = await generate_otp(mobile)
-    return {"success": True, "data": {"farmerId": str(farmer.id), "udlrn": udlrn_code, "devOtp": otp}}
+    return {"success": True, "data": {"farmerId": str(farmer.id), "udlrn": udlrn_code, "devOtp": otp, "registrationStatus": registration_status}}
+
+
+@router.get("/farmer/{mobile}/claims")
+async def get_farmer_claims_for_csc(
+    mobile: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_csc_role),
+):
+    """CSC operator checks claim status for a farmer."""
+    from app.models.farmer import Farmer
+    from app.models.claim import Claim
+    farmer_result = await db.execute(select(Farmer).where(Farmer.mobile == mobile))
+    farmer = farmer_result.scalar_one_or_none()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found")
+
+    claims_result = await db.execute(
+        select(Claim).where(Claim.farmer_id == farmer.id).order_by(Claim.created_at.desc())
+    )
+    claims = claims_result.scalars().all()
+    return {"success": True, "data": [
+        {
+            "id": str(c.id),
+            "claimNumber": c.claim_number,
+            "status": c.status,
+            "lossType": c.damage_cause,
+            "damagePercent": float(c.damage_percent) if c.damage_percent else None,
+            "fraudScore": int(c.fraud_score) if c.fraud_score else None,
+            "filedAt": str(c.filed_at) if c.filed_at else str(c.created_at),
+        }
+        for c in claims
+    ]}
+
+
+@router.post("/farmer/{mobile}/file-claim")
+async def csc_file_claim_for_farmer(
+    mobile: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_csc_role),
+):
+    """CSC operator files a claim on behalf of a farmer."""
+    from app.models.farmer import Farmer
+    from app.models.claim import Claim
+    from uuid import uuid4
+    from datetime import datetime
+
+    farmer_result = await db.execute(select(Farmer).where(Farmer.mobile == mobile))
+    farmer = farmer_result.scalar_one_or_none()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found")
+
+    udlrn_result = await db.execute(select(UdlrnMaster).where(UdlrnMaster.farmer_id == farmer.id))
+    udlrn = udlrn_result.scalar_one_or_none()
+    if not udlrn:
+        raise HTTPException(status_code=400, detail="Farmer has no land record")
+
+    claim = Claim(
+        id=uuid4(),
+        claim_number=f"CLM-{uuid4().hex[:6].upper()}",
+        udlrn=udlrn.udlrn,
+        farmer_id=farmer.id,
+        status="DRAFT",
+        declared_crop=udlrn.declared_crop or "PADDY",
+        claimed_area_ha=udlrn.land_area_ha,
+        damage_cause=body.get("lossType") or body.get("damage_cause"),
+        damage_percent=body.get("damagePercent") or body.get("damage_percent"),
+        affected_area=body.get("affectedArea") or body.get("affected_area"),
+        claim_amount_requested=body.get("claimAmount") or body.get("claim_amount_requested"),
+        loss_date=body.get("lossDate") or body.get("loss_date"),
+        season=body.get("season") or "KHARIF",
+        year=datetime.now().year,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(claim)
+    await db.commit()
+    return {"success": True, "data": {"claimId": str(claim.id), "claimNumber": claim.claim_number, "status": "DRAFT"}}

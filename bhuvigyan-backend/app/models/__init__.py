@@ -6,5 +6,6 @@ from . import (
     weather_satellite, district_master, crop_master, integration_run,
     scoring_request, user_session, farmer_address, disaster_event, vao_alert,
     inspection, field_inspector, field_visit, field_inspection_report, cce_plot,
-    carbon_credit, farm_registration, satellite_report, payment
+    carbon_credit, farm_registration, satellite_report, payment,
+    claim_submission, fraud_alert, insurance_payout
 )

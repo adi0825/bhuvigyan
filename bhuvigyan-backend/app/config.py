@@ -33,7 +33,14 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 5
 
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ]
 
     OTP_RATE_LIMIT: int = 5
     CSC_DAILY_CLAIM_LIMIT: int = 50
@@ -41,6 +48,7 @@ class Settings(BaseSettings):
     OPENWEATHER_API_KEY: str = "1aa9b133b2445b647a1e2f056811a276"
 
     GEE_PROJECT_ID: str = "agri-494914"
+    SUREPASS_TOKEN: str = ""
 
     class Config:
         env_file = ".env"

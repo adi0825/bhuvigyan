@@ -29,14 +29,15 @@ export function useSatelliteTimeseries(
     try {
       const res = await satelliteApi.getFarmTimeseries(farmerId, months);
       const payload = res.data;
-      if (payload.data?.timeseries) {
-        setTimeseries(payload.data.timeseries);
-        setIsCached(payload.cached || false);
+      const timeseriesData = payload?.data?.timeseries || payload?.timeseries || [];
+      if (timeseriesData.length > 0) {
+        setTimeseries(timeseriesData);
+        setIsCached(payload?.cached || payload?.data?.cached || false);
       } else {
         setError('No timeseries data available');
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to load NDVI timeseries';
+      const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message || 'Failed to load NDVI timeseries';
       setError(msg);
     } finally {
       setLoading(false);

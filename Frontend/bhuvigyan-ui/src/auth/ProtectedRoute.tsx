@@ -12,6 +12,10 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
 
+  // Fallback: always verify token exists in localStorage to prevent stale-state issues
+  const hasToken = !!localStorage.getItem('accessToken');
+  const reallyAuthenticated = isAuthenticated && hasToken;
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-glass-gradient">
@@ -20,7 +24,16 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     );
   }
 
-  if (!isAuthenticated) {
+  // Token exists in localStorage but React state hasn't caught up yet (login race)
+  if (!isAuthenticated && hasToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-glass-gradient">
+        <Loader2 className="w-12 h-12 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!reallyAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

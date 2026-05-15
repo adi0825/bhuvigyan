@@ -126,12 +126,106 @@ async def submit_report(
     inspector_id: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
+    """Submit inspection report with GPS distance validation against farm centroid."""
+    from app.models.field_visit import FieldVisit
+    from app.models.claim import Claim
+    from app.models.farmer import Farmer
+    from sqlalchemy import select
+    from app.services.land_service import LandVerifier
+
+    # Fetch visit -> claim -> farmer coordinates
+    visit_result = await db.execute(select(FieldVisit).where(FieldVisit.id == visit_id))
+    visit = visit_result.scalar_one_or_none()
+    if not visit:
+        raise HTTPException(404, "Visit not found")
+
+    claim_result = await db.execute(select(Claim).where(Claim.id == visit.claim_id))
+    claim = claim_result.scalar_one_or_none()
+
+    farmer = None
+    if claim:
+        farmer_result = await db.execute(select(Farmer).where(Farmer.id == claim.farmer_id))
+        farmer = farmer_result.scalar_one_or_none()
+
+    # GPS enforcement: inspector submission GPS vs farm centroid
+    gps_warning = None
+    body_data = body.model_dump()
+    inspector_lat = body_data.get("gps_lat")
+    inspector_lng = body_data.get("gps_lng")
+
+    if farmer and farmer.latitude and farmer.longitude and inspector_lat and inspector_lng:
+        lv = LandVerifier()
+        dist_km = lv.distance_km(
+            float(farmer.latitude), float(farmer.longitude),
+            float(inspector_lat), float(inspector_lng)
+        )
+        if dist_km > 1.0:
+            gps_warning = f"Inspector GPS is {dist_km:.2f}km from farm centroid (max 1km). Report flagged for admin review."
+            # Attach warning to report metadata
+            meta = body_data.get("meta_data") or {}
+            meta["gps_distance_km"] = dist_km
+            meta["gps_warning"] = gps_warning
+            body_data["meta_data"] = meta
+
     report, error = await inspector_service.submit_inspection_report(
-        db, visit_id, inspector_id, body.model_dump()
+        db, visit_id, inspector_id, body_data
     )
     if error:
         raise HTTPException(400, error)
-    return {"success": True, "data": report}
+
+    return {
+        "success": True,
+        "data": report,
+        "gps_warning": gps_warning,
+    }
+
+
+@router.get("/visits/{visit_id}/satellite-brief")
+async def get_satellite_brief(
+    visit_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Pre-visit satellite intelligence: NDVI, SAR, flood for the farm."""
+    from app.models.field_visit import FieldVisit
+    from app.models.claim import Claim
+    from app.models.farmer import Farmer
+    from sqlalchemy import select
+    from app.services.satellite_service import SatelliteService
+
+    visit_result = await db.execute(select(FieldVisit).where(FieldVisit.id == visit_id))
+    visit = visit_result.scalar_one_or_none()
+    if not visit:
+        raise HTTPException(404, "Visit not found")
+
+    claim_result = await db.execute(select(Claim).where(Claim.id == visit.claim_id))
+    claim = claim_result.scalar_one_or_none()
+    if not claim:
+        raise HTTPException(404, "Claim not found for this visit")
+
+    farmer_result = await db.execute(select(Farmer).where(Farmer.id == claim.farmer_id))
+    farmer = farmer_result.scalar_one_or_none()
+    if not farmer or not farmer.latitude or not farmer.longitude:
+        raise HTTPException(400, "Farm coordinates not available")
+
+    svc = SatelliteService()
+    lat, lng = float(farmer.latitude), float(farmer.longitude)
+    ndvi = svc.get_ndvi_current(lat, lng)
+    ndwi = svc.get_ndwi(lat, lng)
+    sar = svc.get_sar_flood(lat, lng)
+    ts = svc.get_ndvi_timeseries(lat, lng, months=6)
+
+    return {
+        "success": True,
+        "data": {
+            "farm_location": {"lat": lat, "lng": lng, "village": farmer.village, "district": farmer.district},
+            "ndvi_current": ndvi if isinstance(ndvi, dict) else None,
+            "ndwi_current": ndwi if isinstance(ndwi, dict) else None,
+            "sar_flood": sar if isinstance(sar, dict) else None,
+            "ndvi_timeseries_6m": ts,
+            "claim_damage_type": claim.damage_cause,
+            "claim_loss_date": str(claim.loss_date) if claim.loss_date else None,
+        },
+    }
 
 
 @router.post("/visits/{visit_id}/photos")

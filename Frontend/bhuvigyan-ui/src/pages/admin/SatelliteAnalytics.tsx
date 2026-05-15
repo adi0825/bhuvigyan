@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Satellite, Search } from "lucide-react";
+import { Satellite, Search, MapPin } from "lucide-react";
 import GovButton from "../../components/ui/GovButton";
 import GovInput from "../../components/ui/GovInput";
 import api from "../../api/axios";
@@ -9,15 +9,31 @@ import { useSatelliteData } from "../../hooks/useSatelliteData";
 import BhumiAICard from "../../components/satellite/BhumiAICard";
 import FarmSatelliteMap from "../../components/satellite/FarmSatelliteMap";
 
+const STATES = ['Karnataka', 'Maharashtra', 'Andhra Pradesh', 'Tamil Nadu', 'Telangana', 'Gujarat', 'Punjab', 'Uttar Pradesh'];
+
+const LOCATION_DATA: any = {
+  Karnataka: {
+    'Bengaluru Rural': { Doddaballapura: ['Hosahalli', 'Mylanahalli'], Devanahalli: ['Kundana', 'Nallurahalli'] },
+    Tumkur: { Tumkur: ['Kunigal', 'Tiptur'], Sira: ['Pavagada', 'Madakasira'] },
+    Bagalkot: { Bagalkot: ['Badami', 'Bilagi'], Jamkhandi: ['Rabakavi', 'Mudhol'] },
+  },
+};
+
 export default function SatelliteAnalytics() {
+  const [searchTab, setSearchTab] = useState<'udlrn' | 'region'>('udlrn');
   const [udlrn, setUdlrn] = useState('');
+  const [region, setRegion] = useState({ state: 'Karnataka', district: '', taluk: '', village: '' });
   const [foundFarmer, setFoundFarmer] = useState<any>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const { data: satData, loading: satLoading, error: satError, refetch } = useSatelliteData(foundFarmer?.farmer_id || null);
 
-  const handleSearch = async () => {
+  const districts = Object.keys(LOCATION_DATA[region.state] || {});
+  const taluks = region.district ? Object.keys(LOCATION_DATA[region.state]?.[region.district] || {}) : [];
+  const villages = region.taluk ? (LOCATION_DATA[region.state]?.[region.district]?.[region.taluk] || []) : [];
+
+  const handleUdlrnSearch = async () => {
     if (!udlrn.trim()) return;
     setSearchLoading(true);
     setSearchError(null);
@@ -35,6 +51,34 @@ export default function SatelliteAnalytics() {
     }
   };
 
+  const handleRegionSearch = async () => {
+    if (!region.district || !region.taluk || !region.village) {
+      toast.error('Please select district, taluk, and village');
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
+    setFoundFarmer(null);
+
+    try {
+      const res = await api.get('/admin/farm/search', {
+        params: {
+          state: region.state,
+          district: region.district,
+          taluk: region.taluk,
+          village: region.village,
+        }
+      });
+      setFoundFarmer(res.data);
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'No farmer found in this region';
+      setSearchError(msg);
+      toast.error(msg);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6 max-w-7xl">
       <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900">
@@ -42,23 +86,84 @@ export default function SatelliteAnalytics() {
         Satellite Analytics
       </h1>
 
-      {/* UDLRN Search */}
+      {/* Search Tabs */}
       <div className="bg-white rounded-xl shadow border border-gray-200 p-5">
-        <div className="text-sm font-semibold text-gray-800 mb-3">
-          Search Farm by UDLRN / ULPIN
+        <div className="flex gap-2 mb-4 border-b border-gray-100 pb-3">
+          <button
+            onClick={() => { setSearchTab('udlrn'); setSearchError(null); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              searchTab === 'udlrn' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            Search by UDLRN
+          </button>
+          <button
+            onClick={() => { setSearchTab('region'); setSearchError(null); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              searchTab === 'region' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            Search by Region
+          </button>
         </div>
-        <div className="flex gap-3">
-          <GovInput
-            value={udlrn}
-            onChange={e => setUdlrn(e.target.value)}
-            placeholder="Enter UDLRN e.g. KA-29-1234-56789"
-            className="flex-1"
-            onKeyPress={e => e.key === 'Enter' && handleSearch()}
-          />
-          <GovButton onClick={handleSearch} disabled={!udlrn.trim() || searchLoading}>
-            {searchLoading ? 'Searching...' : <><Search className="w-4 h-4 mr-1" /> Search</>}
-          </GovButton>
-        </div>
+
+        {searchTab === 'udlrn' ? (
+          <div>
+            <div className="text-sm font-semibold text-gray-800 mb-3">Search Farm by UDLRN / ULPIN</div>
+            <div className="flex gap-3">
+              <GovInput
+                value={udlrn}
+                onChange={e => setUdlrn(e.target.value)}
+                placeholder="Enter UDLRN e.g. KA-29-1234-56789"
+                className="flex-1"
+                onKeyDown={e => e.key === 'Enter' && handleUdlrnSearch()}
+              />
+              <GovButton onClick={handleUdlrnSearch} disabled={!udlrn.trim() || searchLoading}>
+                {searchLoading ? 'Searching...' : <><Search className="w-4 h-4 mr-1" /> Search</>}
+              </GovButton>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="text-sm font-semibold text-gray-800 mb-3">Search Farm by Region</div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <select
+                value={region.state}
+                onChange={e => setRegion({ state: e.target.value, district: '', taluk: '', village: '' })}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select
+                value={region.district}
+                onChange={e => setRegion(r => ({ ...r, district: e.target.value, taluk: '', village: '' }))}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">District</option>
+                {districts.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <select
+                value={region.taluk}
+                onChange={e => setRegion(r => ({ ...r, taluk: e.target.value, village: '' }))}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Taluk</option>
+                {taluks.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select
+                value={region.village}
+                onChange={e => setRegion(r => ({ ...r, village: e.target.value }))}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Village</option>
+                {villages.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+              <GovButton onClick={handleRegionSearch} disabled={searchLoading}>
+                {searchLoading ? '...' : <><MapPin className="w-4 h-4 mr-1" /> Search</>}
+              </GovButton>
+            </div>
+          </div>
+        )}
         {searchError && (
           <div className="mt-3 text-sm text-red-600">
             ❌ {searchError}
@@ -163,11 +268,11 @@ export default function SatelliteAnalytics() {
                 onRefresh={refetch}
               />
               <FarmSatelliteMap
-                rgbTileUrl={satData.rgb_tile_url}
-                ndviTileUrl={satData.ndvi_tile_url}
+                rgbTileUrl={satData.satellite_tile?.tile_url}
+                ndviTileUrl={satData.ndvi_tile?.tile_url}
                 center={{ lat: foundFarmer.farm_lat, lng: foundFarmer.farm_lng }}
                 zoom={15}
-                loading={!satData.rgb_tile_url}
+                loading={!satData.satellite_tile?.tile_url}
               />
             </div>
           ) : null}

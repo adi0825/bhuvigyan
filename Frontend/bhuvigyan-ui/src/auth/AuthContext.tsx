@@ -5,7 +5,7 @@ interface AuthContextType {
   user: AuthUser | null;
   token: string | null;
   isAuthenticated: boolean;
-  login: (token: string, refreshToken: string) => void;
+  login: (token: string, refreshToken: string, extra?: Partial<AuthUser>) => void;
   logout: () => void;
   isLoading: boolean;
 }
@@ -33,6 +33,7 @@ function decodeJwt(token: string): AuthUser | null {
       fullName: payload.fullName || payload.name || '',
       mobile: payload.mobile || '',
       email: payload.email || '',
+      company: payload.company || '',
     };
   } catch (e) {
     console.error('JWT decode error:', e, 'Token:', token.substring(0, 20) + '...');
@@ -60,13 +61,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = useCallback((newToken: string, refreshToken: string) => {
+  // Listen for same-tab auth clears from axios interceptor
+  useEffect(() => {
+    const onAuthClear = () => {
+      setToken(null);
+      setUser(null);
+    };
+    window.addEventListener('bhuvigyan:auth:clear', onAuthClear);
+    return () => window.removeEventListener('bhuvigyan:auth:clear', onAuthClear);
+  }, []);
+
+  const login = useCallback((newToken: string, refreshToken: string, extra?: Partial<AuthUser>) => {
     localStorage.setItem('accessToken', newToken);
     localStorage.setItem('refreshToken', refreshToken);
     const decoded = decodeJwt(newToken);
     if (decoded) {
       setToken(newToken);
-      setUser(decoded);
+      setUser({ ...decoded, ...extra });
     }
   }, []);
 

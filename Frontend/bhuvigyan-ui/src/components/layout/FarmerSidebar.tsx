@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Map, FileText, Leaf, Bell, Download,
+  LayoutDashboard, Map, FileText, FolderOpen, Leaf, Bell, Download,
   UserCircle, HelpCircle, LogOut, Phone, Menu, X, Sprout
 } from 'lucide-react';
 import type { FarmerProfile, LandData } from '../../types';
@@ -9,9 +9,10 @@ import type { FarmerProfile, LandData } from '../../types';
 const navItems = [
   { path: '/farmer/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/farmer/land', label: 'My Land', icon: Map },
+  { path: '/farmer/application', label: 'My Application', icon: FileText },
+  { path: '/farmer/documents', label: 'My Documents', icon: FolderOpen },
   { path: '/farmer/claims', label: 'My Claims', icon: FileText },
   { path: '/farmer/carbon', label: 'Carbon Credits', icon: Leaf },
-  { path: '/farmer/notifications', label: 'Notifications', icon: Bell },
   { path: '/farmer/reports', label: 'My Reports', icon: Download },
   { path: '/farmer/profile', label: 'Profile & Settings', icon: UserCircle },
   { path: '/farmer/help', label: 'Help', icon: HelpCircle },
@@ -111,11 +112,6 @@ export default function FarmerSidebar({ profile, land, unreadCount, onLogout }: 
               >
                 <Icon size={18} />
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.path === '/farmer/notifications' && unreadCount > 0 && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? 'bg-white text-[#016B4B]' : 'bg-[#EF4444] text-white'}`}>
-                    {unreadCount}
-                  </span>
-                )}
               </button>
             );
           })}

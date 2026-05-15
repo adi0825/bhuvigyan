@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, FileText, AlertTriangle,
-  ClipboardList, BarChart3, History, LogOut, Bell,
+  ClipboardList, BarChart3, History, LogOut,
   Satellite, FolderOpen, Boxes, SlidersHorizontal,
   ChevronLeft, ChevronRight, Shield
 } from 'lucide-react';
@@ -23,7 +23,6 @@ export default function AdminSidebar({ collapsed, setCollapsed }: AdminSidebarPr
     { icon: AlertTriangle, label: 'Fraud Detection', path: '/admin/fraud' },
     { icon: ClipboardList, label: 'Assign Visits', path: '/admin/assign-visits' },
     { icon: Satellite, label: 'Satellite Analytics', path: '/admin/satellite-v7' },
-    { icon: Bell, label: 'Notifications', path: '/admin/notifications' },
     { icon: Boxes, label: 'User Management', path: '/admin/users' },
     { icon: BarChart3, label: 'Reports', path: '/admin/reports' },
     { icon: History, label: 'Audit Trail', path: '/admin/audit-log' },

@@ -64,23 +64,70 @@ async def assemble_features(claim_id: str, db: AsyncSession) -> Dict[str, Any]:
     )
     history_claims = history_result.scalars().all()
 
-    # 6. Load satellite cache
-    sat_result = await db.execute(
-        select(SatelliteCache)
-        .where(
-            SatelliteCache.lat == (claim.gps_latitude or 0),
-            SatelliteCache.lng == (claim.gps_longitude or 0),
+    # 6. Load satellite cache — fetch fresh from GEE if missing or stale (>6h)
+    lat = float(claim.gps_latitude) if claim.gps_latitude else None
+    lng = float(claim.gps_longitude) if claim.gps_longitude else None
+    sat_cache: Optional[SatelliteCache] = None
+    if lat and lng:
+        sat_result = await db.execute(
+            select(SatelliteCache)
+            .where(
+                SatelliteCache.lat == lat,
+                SatelliteCache.lng == lng,
+            )
+            .order_by(SatelliteCache.cached_at.desc())
         )
-        .order_by(SatelliteCache.cached_at.desc())
-    )
-    sat_cache: Optional[SatelliteCache] = sat_result.scalar_one_or_none()
+        sat_cache = sat_result.scalar_one_or_none()
+
+        # Fetch fresh if missing or stale (>6 hours)
+        if not sat_cache or (datetime.utcnow() - sat_cache.cached_at).total_seconds() > 21600:
+            try:
+                from app.services.satellite_service import SatelliteService
+                svc = SatelliteService()
+                ndvi_data = svc.get_ndvi_current(lat, lng)
+                ndwi_data = svc.get_ndwi(lat, lng)
+                sar_data = svc.get_sar_flood(lat, lng)
+
+                # Build ndvi_values from timeseries if available
+                ts_data = svc.get_ndvi_timeseries(lat, lng, months=3)
+                ndvi_values = [d["ndvi"] for d in ts_data] if ts_data else []
+
+                mean_ndvi = float(ndvi_data.get("ndvi", 0)) if isinstance(ndvi_data, dict) else 0.0
+                cc = float(ndvi_data.get("cloud_cover_pct", 0)) if isinstance(ndvi_data, dict) else None
+                anomaly = bool(sar_data.get("flood_detected")) if isinstance(sar_data, dict) else False
+
+                # Upsert cache
+                if sat_cache:
+                    sat_cache.mean_ndvi = mean_ndvi
+                    sat_cache.cloud_cover_pct = cc
+                    sat_cache.ndvi_values = ndvi_values
+                    sat_cache.anomaly_detected = anomaly
+                    sat_cache.cached_at = datetime.utcnow()
+                else:
+                    sat_cache = SatelliteCache(
+                        lat=lat,
+                        lng=lng,
+                        start_date=datetime.utcnow().date(),
+                        end_date=datetime.utcnow().date(),
+                        mean_ndvi=mean_ndvi,
+                        cloud_cover_pct=cc,
+                        ndvi_values=ndvi_values,
+                        anomaly_detected=anomaly,
+                        is_mock=False,
+                        cached_at=datetime.utcnow(),
+                    )
+                    db.add(sat_cache)
+                await db.flush()
+            except Exception as e:
+                logger = __import__("logging").getLogger(__name__)
+                logger.warning(f"Failed to fetch fresh satellite data: {e}")
 
     # 7. Load weather cache
     weather_result = await db.execute(
         select(WeatherCache)
         .where(
-            WeatherCache.lat == (claim.gps_latitude or 0),
-            WeatherCache.lng == (claim.gps_longitude or 0),
+            WeatherCache.lat == (lat or 0),
+            WeatherCache.lng == (lng or 0),
             WeatherCache.date == claim.loss_date,
         )
         .order_by(WeatherCache.cached_at.desc())
@@ -160,6 +207,9 @@ async def assemble_features(claim_id: str, db: AsyncSession) -> Dict[str, Any]:
         if ndvi_claim and claim.damage_percent:
             ndvi_mismatch = ndvi_drop and ndvi_drop < 0.15 and float(claim.damage_percent) > 50
         sar_flood_signal = sat_cache.anomaly_detected if hasattr(sat_cache, 'anomaly_detected') else None
+        # Cloud cover from real NDVI response (stored in cache as extra field if available)
+        if hasattr(sat_cache, 'cloud_cover_pct') and sat_cache.cloud_cover_pct is not None:
+            cloud_cover = float(sat_cache.cloud_cover_pct)
 
     # Weather features
     rainfall_loss = float(weather_cache.rainfall_mm) if weather_cache and weather_cache.rainfall_mm else None

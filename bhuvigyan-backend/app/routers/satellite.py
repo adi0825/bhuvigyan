@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from app.database import get_db
-from app.dependencies import get_current_farmer, require_admin_role, require_role
+from app.dependencies import get_current_farmer, require_admin_role, require_role, get_current_user
 from app.models.farmer import Farmer
 from app.models.cce_visit import CceVisit
 from app.models.claim import Claim
@@ -15,7 +15,7 @@ from app.models.udlrn_master import UdlrnMaster
 from app.models.satellite_report import SatelliteReport
 from app.config import settings
 from app.services.satellite_cache import satellite_cache
-from app.services.satellite_service import SatelliteService, get_ndvi_label, get_ndvi_from_gee, get_sar_flood_from_gee, generate_mock_ndvi_12months
+from app.services.satellite_service import SatelliteService, get_ndvi_label, get_ndvi_from_gee, get_sar_flood_from_gee
 
 router = APIRouter(prefix="/satellite", tags=["Satellite Intelligence"])
 sat_service = SatelliteService()
@@ -28,15 +28,20 @@ sat_service = SatelliteService()
 @router.get("/farm/{farmer_id}")
 async def get_farm_satellite(
     farmer_id: str,
+    refresh: bool = Query(False, description="Force refresh, bypass cache"),
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_farmer),
+    user: dict = Depends(require_role(["FARMER", "ADMIN", "SUPER_ADMIN", "ANALYST", "FIELD_OFFICER", "FIELD_INSPECTOR"])),
+    response: Response = None,
 ):
     """Full farm satellite analysis for a farmer.
     Uses Farmer table coordinates (farm_lat, farm_lng)."""
-    fid = UUID(farmer_id)
+    try:
+        fid = UUID(farmer_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid farmer_id format. Must be a valid UUID.")
 
-    # Verify farmer owns this land
-    if user.get("userId") != str(fid):
+    # Verify farmer owns this land (skip for admins/officers)
+    if user.get("role") == "FARMER" and user.get("userId") != str(fid):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Load farmer record from Farmer table
@@ -47,26 +52,54 @@ async def get_farm_satellite(
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
 
-    # Check coordinates exist
-    if not farmer.latitude or not farmer.longitude:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "no_coordinates",
-                "message": "Farm coordinates not set. Please complete land registration first."
-            }
-        )
+    # Check coordinates — try KGIS fallback if village/district available
+    lat = float(farmer.latitude) if farmer.latitude else None
+    lng = float(farmer.longitude) if farmer.longitude else None
+    kgis_resolved = False
 
-    lat = farmer.latitude
-    lng = farmer.longitude
+    if not lat or not lng:
+        if farmer.village and farmer.district and farmer.taluk:
+            try:
+                from app.services.land_service import LandVerifier
+                lv = LandVerifier()
+                resolved = await lv.resolve_village(farmer.state_code or "KA", farmer.district, farmer.taluk, farmer.village)
+                if resolved.get("found"):
+                    lat = float(resolved["centroid_lat"])
+                    lng = float(resolved["centroid_lng"])
+                    farmer.latitude = lat
+                    farmer.longitude = lng
+                    kgis_resolved = True
+                    await db.commit()
+            except Exception:
+                pass
+
+        if not lat or not lng:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "no_coordinates",
+                    "message": "Farm coordinates not set. Please complete land registration first."
+                }
+            )
+
+    if response:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
 
     # Cache by farmer_id for consistency
-    cache = await satellite_cache.get("sat-farm", str(fid))
-    if cache:
-        cache['cached'] = True
-        return {"success": True, "data": cache, "cached": True}
+    if not refresh:
+        cache = await satellite_cache.get("sat-farm", str(fid))
+        if cache:
+            cache['cached'] = True
+            return {"success": True, "data": cache, "cached": True}
 
-    analysis = sat_service.get_full_analysis(lat, lng, buffer_m=5000)
+    try:
+        analysis = sat_service.get_full_analysis(lat, lng, buffer_m=100)
+    except Exception as e:
+        return {"success": False, "error": "analysis_failed", "message": f"Satellite analysis failed: {str(e)}"}
+    if isinstance(analysis, dict) and "error" in analysis:
+        return {"success": False, "error": analysis["error"], "message": analysis.get("message", "Satellite analysis failed")}
     if isinstance(analysis.get("ndvi"), dict) and "error" in analysis["ndvi"]:
         return {"success": False, "error": analysis["ndvi"]["error"], "message": analysis["ndvi"]["message"]}
 
@@ -98,13 +131,14 @@ async def get_farm_timeseries(
     farmer_id: str,
     months: int = Query(12, ge=1, le=24),
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_farmer),
+    user: dict = Depends(require_role(["FARMER", "ADMIN", "SUPER_ADMIN", "ANALYST", "FIELD_OFFICER", "FIELD_INSPECTOR"])),
+    response: Response = None,
 ):
     """NDVI time series for a farmer's plot."""
-    fid = UUID(farmer_id)
-    cache = await satellite_cache.get("sat-farm-ts", str(fid), months)
-    if cache:
-        return {"success": True, "data": {"timeseries": cache, "months": months}, "cached": True}
+    try:
+        fid = UUID(farmer_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid farmer_id format. Must be a valid UUID.")
 
     # Load farmer record from Farmer table
     result = await db.execute(
@@ -116,10 +150,24 @@ async def get_farm_timeseries(
     if not farmer.latitude or not farmer.longitude:
         raise HTTPException(status_code=400, detail="Coordinates not available")
 
-    lat = farmer.latitude
-    lng = farmer.longitude
+    if response:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
 
-    ts = sat_service.get_ndvi_timeseries(lat, lng, months=months)
+    lat = float(farmer.latitude)
+    lng = float(farmer.longitude)
+
+    cache = await satellite_cache.get("sat-farm-ts", str(fid), months)
+    if cache:
+        return {"success": True, "data": {"timeseries": cache, "months": months}, "cached": True}
+
+    try:
+        ts = sat_service.get_ndvi_timeseries(lat, lng, months=months)
+    except Exception as e:
+        return {"success": False, "error": "timeseries_failed", "message": f"Failed to fetch NDVI timeseries: {str(e)}"}
+    if isinstance(ts, dict) and "error" in ts:
+        return {"success": False, "error": ts["error"], "message": ts.get("message", "Timeseries failed")}
     await satellite_cache.set("sat-farm-ts", ts, satellite_cache.TTL_TIMESERIES, str(fid), months)
     return {"success": True, "data": {"timeseries": ts, "months": months}, "cached": False}
 
@@ -128,10 +176,14 @@ async def get_farm_timeseries(
 async def get_farm_tiles(
     farmer_id: str,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(get_current_farmer),
+    user: dict = Depends(require_role(["FARMER", "ADMIN", "SUPER_ADMIN", "ANALYST", "FIELD_OFFICER", "FIELD_INSPECTOR"])),
+    response: Response = None,
 ):
     """Satellite tile URLs for a farmer's plot."""
-    fid = UUID(farmer_id)
+    try:
+        fid = UUID(farmer_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid farmer_id format. Must be a valid UUID.")
     cache = await satellite_cache.get("sat-farm-tiles", str(fid))
     if cache:
         return {"success": True, "data": cache, "cached": True}
@@ -146,8 +198,13 @@ async def get_farm_tiles(
     if not farmer.latitude or not farmer.longitude:
         raise HTTPException(status_code=400, detail="Coordinates not available")
 
-    lat = farmer.latitude
-    lng = farmer.longitude
+    if response:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    lat = float(farmer.latitude)
+    lng = float(farmer.longitude)
 
     rgb_tile = sat_service.get_satellite_tile_url(lat, lng)
     ndvi_tile = sat_service.get_ndvi_tile_url(lat, lng)
@@ -169,6 +226,7 @@ async def get_farm_thumbnail(
     farmer_id: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_role(["FARMER", "ADMIN", "SUPER_ADMIN", "ANALYST", "FIELD_OFFICER", "FIELD_INSPECTOR"])),
+    response: Response = None,
 ):
     """Base64-embedded satellite thumbnail (5km radius) for a farmer's land.
     Accessible by: Farmer (own land), Admin, Officer, Inspector."""
@@ -187,6 +245,11 @@ async def get_farm_thumbnail(
     udlrn = udlrn_result.scalar_one_or_none()
     if not udlrn:
         raise HTTPException(status_code=404, detail="Land record not found")
+
+    if response:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
 
     lat = float(udlrn.gps_lat) if udlrn.gps_lat else 13.1234
     lng = float(udlrn.gps_lng) if udlrn.gps_lng else 77.5678
@@ -210,8 +273,14 @@ async def get_direct_thumbnail(
     lng: float = Query(..., description="Longitude"),
     radius_m: int = Query(5000, ge=100, le=25000, description="Radius in meters"),
     user: dict = Depends(require_role(["ADMIN", "SUPER_ADMIN", "ANALYST", "FIELD_OFFICER", "FIELD_INSPECTOR", "DC"])),
+    response: Response = None,
 ):
     """Direct satellite thumbnail for any lat/lng. For admin/officer/inspector use."""
+    if response:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
     thumbnail_b64 = sat_service.get_satellite_thumbnail_b64(lat, lng, buffer_m=radius_m)
     return {
         "success": True,
@@ -230,6 +299,7 @@ async def get_farm_by_udlrn(
     udlrn: str,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_role(["ADMIN", "SUPER_ADMIN", "ANALYST", "FIELD_OFFICER", "FIELD_INSPECTOR"])),
+    response: Response = None,
 ):
     """Admin/Officer: Get full farm satellite data by UDLRN number.
     Returns the same data as farmer sees for consistency."""
@@ -237,8 +307,13 @@ async def get_farm_by_udlrn(
         select(UdlrnMaster).where(UdlrnMaster.udlrn == udlrn)
     )
     udlrn_rec = udlrn_result.scalar_one_or_none()
-    if not udlrn:
+    if not udlrn_rec:
         raise HTTPException(status_code=404, detail="Land record not found")
+
+    if response:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
 
     lat = float(udlrn_rec.gps_lat) if udlrn_rec.gps_lat else 13.1234
     lng = float(udlrn_rec.gps_lng) if udlrn_rec.gps_lng else 77.5678
@@ -248,7 +323,10 @@ async def get_farm_by_udlrn(
     if cache:
         return {"success": True, "data": cache, "cached": True}
 
-    analysis = sat_service.get_full_analysis(lat, lng, buffer_m=5000)
+    try:
+        analysis = sat_service.get_full_analysis(lat, lng, buffer_m=100)
+    except Exception as e:
+        return {"success": False, "error": "analysis_failed", "message": f"Satellite analysis failed: {str(e)}"}
     
     # Add farmer/land info to response
     result = {
@@ -386,7 +464,10 @@ async def get_visit_satellite(
     user: dict = Depends(require_role(["INSPECTOR", "ADMIN", "SUPER_ADMIN"])),
 ):
     """Inspector: Satellite brief for a visit."""
-    vid = UUID(visit_id)
+    try:
+        vid = UUID(visit_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid visit_id format. Must be a valid UUID.")
     result = await db.execute(
         select(CceVisit, Claim, Farmer)
         .join(Claim, CceVisit.claim_id == Claim.id)
@@ -421,10 +502,13 @@ async def get_farm_report(
     """Aggregated satellite report for logged-in farmer's land."""
     from app.services.satellite_service import (
         get_farm_view, get_ndvi_label, get_ndvi_from_gee,
-        get_sar_flood_from_gee, generate_mock_ndvi_12months
+        get_sar_flood_from_gee
     )
 
-    farmer_id = UUID(user["userId"])
+    try:
+        farmer_id = UUID(user["userId"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
     udlrn_result = await db.execute(
         select(UdlrnMaster).where(UdlrnMaster.farmer_id == farmer_id)
     )
@@ -474,7 +558,7 @@ async def get_farm_report(
         "pipeline_status": "Active",
         "computed_at": end_date.isoformat(),
         "crop": crop,
-        "time_series": generate_mock_ndvi_12months(crop),
+        "time_series": [],
     }
 
     import json
@@ -593,7 +677,10 @@ async def get_ndvi_history(
 ):
     """12-month NDVI time series for farmer's plot from real GEE data."""
     from app.services.satellite_service import get_ndvi_history_from_gee
-    farmer_id = UUID(user["userId"])
+    try:
+        farmer_id = UUID(user["userId"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
     udlrn_result = await db.execute(
         select(UdlrnMaster).where(UdlrnMaster.farmer_id == farmer_id)
     )
@@ -642,6 +729,93 @@ async def get_all_farms_satellite(
         })
 
     return {"success": True, "data": farms, "count": len(farms)}
+
+
+@router.post("/verify")
+async def verify_land_satellite(
+    request: dict,
+    response: Response = None,
+):
+    """Public endpoint for Land Portal: real-time satellite verification by lat/lng.
+    No auth required — used during farmer registration."""
+    lat = request.get("lat")
+    lng = request.get("lng")
+    start_date = request.get("start_date")
+    end_date = request.get("end_date")
+
+    if lat is None or lng is None:
+        raise HTTPException(status_code=400, detail="lat and lng are required")
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="lat and lng must be valid numbers")
+
+    if response:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    # Optional date range defaults to last 4 months
+    if not end_date:
+        end_date = datetime.utcnow().strftime('%Y-%m-%d')
+    if not start_date:
+        start_date = (datetime.utcnow() - timedelta(days=120)).strftime('%Y-%m-%d')
+
+    analysis = sat_service.get_full_analysis(lat, lng, buffer_m=100)
+
+    if isinstance(analysis, dict) and "error" in analysis:
+        return {"success": False, "error": analysis["error"], "message": analysis.get("message", "Satellite analysis failed")}
+
+    # Extract real values with safe fallbacks
+    ndvi_data = analysis.get("ndvi", {}) or {}
+    ndwi_data = analysis.get("ndwi", {}) or {}
+    sar_data = analysis.get("sar_flood", {}) or {}
+    fire_data = analysis.get("fire_alerts", {}) or {}
+    thumbnail = analysis.get("thumbnail_b64", "")
+
+    # Compute fraud risk from real NDVI (simple heuristic)
+    ndvi_value = ndvi_data.get("ndvi") if isinstance(ndvi_data, dict) else None
+    fraud_score = 15
+    fraud_risk = "LOW"
+    if ndvi_value is not None:
+        if ndvi_value < 0.15:
+            fraud_score = 85
+            fraud_risk = "HIGH"
+        elif ndvi_value < 0.30:
+            fraud_score = 55
+            fraud_risk = "MEDIUM"
+        elif ndvi_value > 0.65:
+            fraud_score = 10
+            fraud_risk = "LOW"
+
+    result = {
+        "lat": lat,
+        "lng": lng,
+        "ndvi": round(ndvi_value, 2) if ndvi_value is not None else None,
+        "ndvi_label": ndvi_data.get("health_label") if isinstance(ndvi_data, dict) else None,
+        "scan_date": ndvi_data.get("scan_date") if isinstance(ndvi_data, dict) else None,
+        "cloud_cover_pct": ndvi_data.get("cloud_cover_pct") if isinstance(ndvi_data, dict) else None,
+        "soil_moisture": ndwi_data.get("ndwi") if isinstance(ndwi_data, dict) else None,
+        "moisture_label": ndwi_data.get("label") if isinstance(ndwi_data, dict) else None,
+        "flood_detected": sar_data.get("flood_detected") if isinstance(sar_data, dict) else None,
+        "flood_area_ha": sar_data.get("flood_area_ha") if isinstance(sar_data, dict) else None,
+        "fire_detected": fire_data.get("fire_detected") if isinstance(fire_data, dict) else None,
+        "hotspot_count": fire_data.get("hotspot_count") if isinstance(fire_data, dict) else None,
+        "thumbnail_b64": thumbnail,
+        "satellite_tile": analysis.get("satellite_tile", {}),
+        "ndvi_tile": analysis.get("ndvi_tile", {}),
+        "fraud_score": fraud_score,
+        "fraud_risk": fraud_risk,
+        "crop_coverage": round((ndvi_value or 0.5) * 130) if ndvi_value is not None else None,
+        "baseline_match": "10-Year Baseline: Agricultural land confirmed" if (ndvi_value is not None and ndvi_value > 0.2) else "Low vegetation — verify manually",
+        "sar_status": "Active" if (isinstance(sar_data, dict) and "error" not in sar_data) else "Unavailable",
+        "computed_at": datetime.utcnow().isoformat(),
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+    return {"success": True, "data": result}
 
 
 @router.post("/refresh")

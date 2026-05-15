@@ -12,12 +12,13 @@ import OfficerLogin from './pages/auth/OfficerLogin';
 import InsurerLogin from './pages/auth/InsurerLogin';
 import StateLogin from './pages/auth/StateLogin';
 import FarmerRegister from './pages/auth/FarmerRegister';
+import ForgotUdlrn from './pages/auth/ForgotUdlrn';
 
 import FarmerLayout from './pages/farmer/FarmerLayout';
 import FarmerDashboard from './pages/farmer/FarmerDashboard';
 import FarmerCarbon from './pages/farmer/FarmerCarbon';
 import FarmerProfile from './pages/farmer/FarmerProfile';
-import FarmerLand from './pages/farmer/FarmerLand';
+import MyLand from './pages/farmer/MyLand';
 import FarmerSatellite from './pages/farmer/FarmerSatellite';
 import FarmerClaims from './pages/farmer/FarmerClaims';
 import FarmerReports from './pages/farmer/FarmerReports';
@@ -25,6 +26,9 @@ import FarmerHelp from './pages/farmer/FarmerHelp';
 import CreateClaim from './pages/farmer/CreateClaim';
 import ClaimDetail from './pages/farmer/ClaimDetail';
 import FarmerNotifications from './pages/farmer/Notifications';
+import MyApplication from './pages/farmer/MyApplication';
+import MyDocuments from './pages/farmer/MyDocuments';
+import LandPortal from './pages/LandPortal';
 
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -52,6 +56,11 @@ import Settings from './pages/admin/Settings';
 
 import CscLayout from './pages/csc/CscLayout';
 import CscDashboard from './pages/csc/CscDashboard';
+import CscNewClaim from './pages/csc/CscNewClaim';
+import CscMyClaims from './pages/csc/CscMyClaims';
+import CscClaimDetail from './pages/csc/CscClaimDetail';
+import CscFraudAlerts from './pages/csc/CscFraudAlerts';
+import CscReports from './pages/csc/CscReports';
 
 import FieldDashboard from './pages/field-officer/FieldDashboard';
 import FieldLayout from './pages/field-officer/FieldLayout';
@@ -63,6 +72,13 @@ import InspectorHistory from './pages/field-officer/InspectorHistory';
 import InsurerDashboard from './pages/insurer/InsurerDashboard';
 import InsurerLayout from './pages/insurer/InsurerLayout';
 import FraudAnalytics from './pages/insurer/FraudAnalytics';
+import InsurerClaimsQueue from './pages/insurer/InsurerClaimsQueue';
+import InsurerClaimReview from './pages/insurer/InsurerClaimReview';
+import InsurerFraudAlerts from './pages/insurer/InsurerFraudAlerts';
+import InsurerApproved from './pages/insurer/InsurerApproved';
+import InsurerRejected from './pages/insurer/InsurerRejected';
+import InsurerHeatmap from './pages/insurer/InsurerHeatmap';
+import InsurerAnalytics from './pages/insurer/InsurerAnalytics';
 import StateDashboard from './pages/state/StateDashboard';
 import StateLayout from './pages/state/StateLayout';
 import ClaimQueue from './pages/state/ClaimQueue';
@@ -95,6 +111,8 @@ export default function App() {
           <Route path="/login" element={<LoginSelector />} />
           <Route path="/register" element={<FarmerRegister />} />
           <Route path="/login/farmer" element={<FarmerLogin />} />
+          <Route path="/forgot-udlrn" element={<ForgotUdlrn />} />
+          <Route path="/land-portal" element={<LandPortal />} />
           <Route path="/login/admin" element={<AdminLogin />} />
           <Route path="/login/csc" element={<CscLogin />} />
           <Route path="/login/officer" element={<OfficerLogin />} />
@@ -111,7 +129,9 @@ export default function App() {
             }
           >
             <Route path="dashboard" element={<FarmerDashboard />} />
-            <Route path="land" element={<FarmerLand />} />
+            <Route path="land" element={<MyLand />} />
+            <Route path="application" element={<MyApplication />} />
+            <Route path="documents" element={<MyDocuments />} />
             <Route path="claims" element={<FarmerClaims />} />
             <Route path="claims/new" element={<CreateClaim />} />
             <Route path="claims/:claimId" element={<ClaimDetail />} />
@@ -171,6 +191,11 @@ export default function App() {
             }
           >
             <Route path="dashboard" element={<CscDashboard />} />
+            <Route path="new-claim" element={<CscNewClaim />} />
+            <Route path="my-claims" element={<CscMyClaims />} />
+            <Route path="claim/:claimId" element={<CscClaimDetail />} />
+            <Route path="fraud-alerts" element={<CscFraudAlerts />} />
+            <Route path="reports" element={<CscReports />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Route>
 
@@ -204,6 +229,13 @@ export default function App() {
           >
             <Route path="dashboard" element={<InsurerDashboard />} />
             <Route path="fraud-analytics" element={<FraudAnalytics />} />
+            <Route path="claims" element={<InsurerClaimsQueue />} />
+            <Route path="claim/:claimId" element={<InsurerClaimReview />} />
+            <Route path="fraud-alerts" element={<InsurerFraudAlerts />} />
+            <Route path="approved" element={<InsurerApproved />} />
+            <Route path="rejected" element={<InsurerRejected />} />
+            <Route path="heatmap" element={<InsurerHeatmap />} />
+            <Route path="analytics" element={<InsurerAnalytics />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Route>
 

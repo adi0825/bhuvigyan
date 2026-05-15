@@ -3,7 +3,7 @@
 # bhuvigyan-frontend/
 
 # Bhuvigyan folders (excluded as per requirement)
-bhuvigyan/
+# bhuvigyan/
 
 # Build artifacts
 target/

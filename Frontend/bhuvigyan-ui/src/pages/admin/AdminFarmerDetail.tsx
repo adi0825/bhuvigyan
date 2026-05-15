@@ -20,6 +20,8 @@ interface FarmerDetail {
   landAreaHa: number;
   carbonEligible: boolean;
   carbonEnrolled: boolean;
+  latitude?: number;
+  longitude?: number;
   claims: Array<{ id: string; claimNumber: string; status: string; amount: number; lossType: string; date: string }>;
   documents: Array<{ type: string; status: string; uploadedAt: string }>;
   ndviHistory: Array<{ month: string; value: number }>;
@@ -39,28 +41,28 @@ export default function AdminFarmerDetail() {
       const res = await api.get(`/admin/farmers/${id}`);
       const data = res.data?.data;
       if (data) {
-        setFarmer(data);
+        // Normalize backend data to match frontend interface
+        const normalized: FarmerDetail = {
+          id: data.id || id || "1",
+          fullName: data.fullName || data.full_name || "Unknown",
+          mobile: data.mobile || "—",
+          village: data.village || "—",
+          district: data.district || "—",
+          state: data.state || data.state_code || "—",
+          registeredAt: data.registeredAt || data.created_at || new Date().toISOString(),
+          verificationStatus: data.verificationStatus || (data.isVerified ? "verified" : "pending"),
+          landAreaHa: data.landAreaHa ?? data.land_area_ha ?? 0,
+          carbonEligible: data.carbonEligible ?? data.carbon_eligible ?? false,
+          carbonEnrolled: data.carbonEnrolled ?? data.carbon_enrolled ?? false,
+          latitude: data.latitude ?? data.lat ?? undefined,
+          longitude: data.longitude ?? data.lng ?? undefined,
+          claims: data.claims || [],
+          documents: data.documents || [],
+          ndviHistory: data.ndviHistory || data.ndvi_history || [],
+        };
+        setFarmer(normalized);
       } else {
-        // Demo fallback
-        setFarmer({
-          id: id || "1", fullName: "Ramesh Kumar", mobile: "9900000001",
-          village: "Hosahalli", district: "Bengaluru Rural", state: "Karnataka",
-          registeredAt: "2026-05-01", verificationStatus: "verified",
-          landAreaHa: 2.5, carbonEligible: true, carbonEnrolled: false,
-          claims: [
-            { id: "c1", claimNumber: "CLM-2026-001", status: "APPROVED", amount: 45000, lossType: "Drought", date: "2026-05-10" },
-          ],
-          documents: [
-            { type: "RTC / Pahani", status: "verified", uploadedAt: "2026-05-01" },
-            { type: "Aadhaar", status: "verified", uploadedAt: "2026-05-01" },
-            { type: "Bank Passbook", status: "pending", uploadedAt: "2026-05-02" },
-          ],
-          ndviHistory: [
-            { month: "Jun", value: 0.35 }, { month: "Jul", value: 0.42 },
-            { month: "Aug", value: 0.55 }, { month: "Sep", value: 0.48 },
-            { month: "Oct", value: 0.30 }, { month: "Nov", value: 0.25 },
-          ],
-        });
+        setFarmer(null);
       }
     } catch {
       toast.error("Failed to load farmer details");
@@ -92,6 +94,9 @@ export default function AdminFarmerDetail() {
           </div>
           <p className="text-sm text-gray-500 flex items-center gap-2"><Phone className="w-4 h-4" /> {farmer.mobile}</p>
           <p className="text-sm text-gray-500 flex items-center gap-2 mt-1"><MapPin className="w-4 h-4" /> {farmer.village}, {farmer.district}, {farmer.state}</p>
+          {farmer.latitude && farmer.longitude && (
+            <p className="text-sm text-gray-400 flex items-center gap-2 mt-1">GPS: {farmer.latitude.toFixed(4)}, {farmer.longitude.toFixed(4)}</p>
+          )}
         </div>
         <div className="flex gap-2">
           {farmer.verificationStatus === "pending" && (
@@ -125,21 +130,23 @@ export default function AdminFarmerDetail() {
         {/* Documents */}
         <div className="bg-white rounded-xl shadow overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 font-bold text-sm flex items-center gap-2"><FileText className="w-4 h-4 text-blue-500" /> Documents</div>
-          <div className="p-4 space-y-3">
+          {farmer.documents.length === 0 ? <p className="p-4 text-sm text-gray-500">No documents uploaded</p>
+          : <div className="p-4 space-y-3">
             {farmer.documents.map((d, i) => (
               <div key={i} className="flex items-center justify-between p-2 rounded-lg border border-gray-100">
                 <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-gray-400" /><span className="text-sm">{d.type}</span></div>
                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${d.status === "verified" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{d.status}</span>
               </div>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
 
       {/* NDVI Chart */}
       <div className="bg-white rounded-xl shadow p-4">
         <h3 className="font-bold text-sm mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-green-500" /> NDVI History (6 months)</h3>
-        <div className="h-40 flex items-end gap-4">
+        {farmer.ndviHistory.length === 0 ? <p className="text-sm text-gray-500">No NDVI data available. Satellite data requires GPS coordinates.</p>
+        : <div className="h-40 flex items-end gap-4">
           {farmer.ndviHistory.map((n, i) => (
             <div key={i} className="flex-1 flex flex-col items-center gap-1">
               <div className="w-full bg-green-100 rounded-t" style={{ height: `${n.value * 200}px` }} />
@@ -147,7 +154,7 @@ export default function AdminFarmerDetail() {
               <span className="text-xs font-medium">{n.value}</span>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );

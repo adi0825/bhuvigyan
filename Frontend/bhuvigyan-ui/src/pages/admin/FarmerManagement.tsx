@@ -44,19 +44,13 @@ export default function FarmerManagement() {
     try {
       const res = await api.get("/admin/farmers", { params: { page: 1, limit: 100 } });
       const data = res.data?.data?.farmers || [];
-      const augmented: FarmerRecord[] = data.length > 0 ? data.map((f: any) => ({
+      const augmented: FarmerRecord[] = data.map((f: any) => ({
         id: f.id, fullName: f.fullName, mobile: f.mobile,
-        village: f.village || "Hosahalli", district: f.district || "Bengaluru Rural",
-        state: f.state || "Karnataka", registeredAt: f.registeredAt || "2026-05-01",
-        verificationStatus: f.isVerified ? "verified" : "pending",
-        landAreaHa: f.landAreaHa || 2.5, claimsCount: f.claimsCount || 0,
-      })) : [
-        { id: "1", fullName: "Ramesh Kumar", mobile: "9900000001", village: "Hosahalli", district: "Bengaluru Rural", state: "Karnataka", registeredAt: "2026-05-01", verificationStatus: "verified", landAreaHa: 2.5, claimsCount: 1 },
-        { id: "2", fullName: "Suresh Nayak", mobile: "9900000002", village: "Gollahalli", district: "Tumkur", state: "Karnataka", registeredAt: "2026-05-02", verificationStatus: "pending", landAreaHa: 3.0, claimsCount: 0 },
-        { id: "3", fullName: "Mahesh Reddy", mobile: "9900000003", village: "Doddaballapura", district: "Bengaluru Rural", state: "Karnataka", registeredAt: "2026-05-03", verificationStatus: "verified", landAreaHa: 1.8, claimsCount: 2 },
-        { id: "4", fullName: "Ganesh Gowda", mobile: "9900000004", village: "Nelamangala", district: "Bengaluru Rural", state: "Karnataka", registeredAt: "2026-05-04", verificationStatus: "rejected", landAreaHa: 4.2, claimsCount: 0 },
-        { id: "5", fullName: "Naresh Babu", mobile: "9900000005", village: "Koratagere", district: "Tumkur", state: "Karnataka", registeredAt: "2026-05-05", verificationStatus: "suspended", landAreaHa: 5.0, claimsCount: 3 },
-      ];
+        village: f.village || "—", district: f.district || "—",
+        state: f.state || "—", registeredAt: f.registeredAt || "—",
+        verificationStatus: f.isVerified ? "verified" : (f.verificationStatus || "pending"),
+        landAreaHa: f.landAreaHa ?? 0, claimsCount: f.claimsCount ?? 0,
+      }));
       setFarmers(augmented);
     } catch { toast.error("Failed to load farmers"); }
     finally { setLoading(false); }
@@ -142,19 +136,11 @@ export default function FarmerManagement() {
                         <div className="grid md:grid-cols-3 gap-4">
                           <div className="bg-white p-4 rounded-lg border border-gray-100">
                             <h4 className="font-bold text-sm mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-blue-500" /> Documents</h4>
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between"><span>RTC / Pahani</span><span className="text-green-600 font-medium">Verified</span></div>
-                              <div className="flex justify-between"><span>Aadhaar Card</span><span className="text-green-600 font-medium">Verified</span></div>
-                              <div className="flex justify-between"><span>Passbook</span><span className="text-yellow-600 font-medium">Pending</span></div>
-                            </div>
+                            <p className="text-xs text-gray-500">No documents available</p>
                           </div>
                           <div className="bg-white p-4 rounded-lg border border-gray-100">
                             <h4 className="font-bold text-sm mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-green-500" /> Verification</h4>
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between"><span>KGIS Match</span><span className="text-green-600 font-medium">Approved</span></div>
-                              <div className="flex justify-between"><span>Aadhaar Seeded</span><span className="text-green-600 font-medium">Approved</span></div>
-                              <div className="flex justify-between"><span>Bank Penny Drop</span><span className="text-yellow-600 font-medium">Pending</span></div>
-                            </div>
+                            <p className="text-xs text-gray-500">Status: {f.verificationStatus}</p>
                           </div>
                           <div className="bg-white p-4 rounded-lg border border-gray-100">
                             <h4 className="font-bold text-sm mb-3">Actions</h4>

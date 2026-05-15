@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bhuvigyan-v1';
+const CACHE_NAME = 'bhuvigyan-v2';
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
@@ -25,6 +25,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith(self.location.origin)) return;
+
+  // Never cache API calls so backend fixes are picked up immediately
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/api/')) return;
 
   event.respondWith(
     fetch(event.request)

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, Upload, ShieldCheck, FileText, Image, Camera, Video } from "lucide-react";
+import { AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, Upload, ShieldCheck, FileText, Image, Camera, Video, Info } from "lucide-react";
 import api from "../../api/axios";
 import GovButton from "../../components/ui/GovButton";
 import toast from "react-hot-toast";
@@ -161,13 +161,21 @@ export default function CreateClaim() {
           <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="bg-white rounded-xl shadow p-6 space-y-4">
             <h2 className="font-bold text-gray-900">Step 1: Select Policy</h2>
             {policies.length === 0 ? (
-              <p className="text-gray-500">No active policies found.</p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+                <Info className="w-5 h-5 text-yellow-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-yellow-800">No active policies found</p>
+                  <p className="text-xs text-yellow-700 mt-1">
+                    You need an active crop insurance policy to file a claim. Contact your insurer or visit the nearest CSC centre to enrol.
+                  </p>
+                </div>
+              </div>
             ) : (
               <div className="grid gap-3">
                 {policies.map(p => (
                   <button key={p.id} onClick={() => update("policyId", p.id)} className={`text-left p-4 rounded-xl border-2 transition-colors ${form.policyId === p.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}>
                     <p className="font-bold text-gray-900">{p.policyNumber}</p>
-                    <p className="text-sm text-gray-600">{p.crop} · {p.season} · {p.insuredArea} Ha · Sum Insured: ₹{p.sumInsured?.toLocaleString()}</p>
+                    <p className="text-sm text-gray-600">{p.crop} · {p.season || '—'} · {p.insuredArea} Ha · Sum Insured: ₹{p.sumInsured?.toLocaleString()}</p>
                   </button>
                 ))}
               </div>
@@ -352,7 +360,7 @@ export default function CreateClaim() {
           <GovButton variant="outline" onClick={handleBack} disabled={step === 1}>
             <ChevronLeft className="w-4 h-4 mr-1" /> Back
           </GovButton>
-          <GovButton variant="primary" onClick={handleNext}>
+          <GovButton variant="primary" onClick={handleNext} disabled={step === 1 && policies.length === 0}>
             Next <ChevronRight className="w-4 h-4 ml-1" />
           </GovButton>
         </div>
