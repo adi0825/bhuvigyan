@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Map, FileText, FolderOpen, Leaf, Bell, Download,
-  UserCircle, HelpCircle, LogOut, Phone, Menu, X, Sprout
+  UserCircle, HelpCircle, LogOut, Phone, Menu, X, Sprout, Shield
 } from 'lucide-react';
 import type { FarmerProfile, LandData } from '../../types';
 
@@ -11,6 +11,7 @@ const navItems = [
   { path: '/farmer/land', label: 'My Land', icon: Map },
   { path: '/farmer/application', label: 'My Application', icon: FileText },
   { path: '/farmer/documents', label: 'My Documents', icon: FolderOpen },
+  { path: '/farmer/insurance', label: 'My Insurance', icon: Shield },
   { path: '/farmer/claims', label: 'My Claims', icon: FileText },
   { path: '/farmer/carbon', label: 'Carbon Credits', icon: Leaf },
   { path: '/farmer/reports', label: 'My Reports', icon: Download },

@@ -2,11 +2,12 @@ import { Outlet, NavLink } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import {
   LayoutDashboard, ClipboardList, AlertTriangle, CheckCircle, XCircle,
-  Map, BarChart3, LogOut
+  Map, BarChart3, LogOut, ShieldCheck
 } from 'lucide-react';
 
 const navItems = [
   { path: '/insurer/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/insurer/policy-applications', label: 'Policy Applications', icon: ShieldCheck },
   { path: '/insurer/claims', label: 'Claims Queue', icon: ClipboardList },
   { path: '/insurer/fraud-alerts', label: 'Fraud Alerts', icon: AlertTriangle },
   { path: '/insurer/approved', label: 'Approved', icon: CheckCircle },

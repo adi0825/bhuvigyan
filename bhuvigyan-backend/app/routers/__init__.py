@@ -6,5 +6,6 @@ from app.routers import (
     inspector, admin_inspector, inspector_auth,
     payments, carbon_credits, farm_registrations,
     satellite, land, analysis,
-    csc_portal, insurer_portal
+    csc_portal, insurer_portal,
+    farmer_insurance, insurer_policies
 )

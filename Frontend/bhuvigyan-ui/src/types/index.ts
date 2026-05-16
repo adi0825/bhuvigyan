@@ -158,7 +158,7 @@ export interface FarmerProfile {
   carbonEligible?: boolean;
   carbonEnrolled?: boolean;
   notificationPrefs?: { inApp: boolean; sms: boolean; whatsapp: boolean };
-  parcels?: Array<{ udlrn: string; areaHa: number; landUse: string; crop: string }>;
+  landHoldings?: Array<{ udlrn: string; areaHa: number; landUse: string; crop: string }>;
   createdAt?: string;
 }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, Upload, ShieldCheck, FileText, Image, Camera, Video, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, Upload, ShieldCheck, FileText, Image, Camera, Video, Info, Lock } from "lucide-react";
 import api from "../../api/axios";
 import GovButton from "../../components/ui/GovButton";
 import toast from "react-hot-toast";
@@ -57,9 +57,20 @@ export default function CreateClaim() {
   const [documents, setDocuments] = useState<Record<number, File>>({});
   const [confirmations, setConfirmations] = useState([false, false, false]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [eligibility, setEligibility] = useState<{isEligible: boolean; reason: string} | null>(null);
+  const [checkingEligibility, setCheckingEligibility] = useState(true);
 
   useEffect(() => {
     api.get("/farmer/policies").then(r => setPolicies(r.data?.data || [])).catch(() => setPolicies([]));
+    api.get("/farmer/land").then(r => {
+      const udl = r.data?.data?.udlrn;
+      if (udl) {
+        return api.get(`/farmer/insurance/eligibility/${udl}`);
+      }
+      return null;
+    }).then((r: any) => {
+      if (r?.data?.success) setEligibility(r.data.data);
+    }).catch(() => {}).finally(() => setCheckingEligibility(false));
   }, []);
 
   const selectedPolicy = useMemo(() => policies.find(p => p.id === form.policyId), [policies, form.policyId]);
@@ -136,6 +147,32 @@ export default function CreateClaim() {
       toast.error(err.response?.data?.error?.message || "Failed to create claim");
     } finally { setSubmitting(false); }
   };
+
+  if (checkingEligibility) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#016B4B]"></div>
+      </div>
+    );
+  }
+
+  if (eligibility && !eligibility.isEligible) {
+    return (
+      <div className="max-w-2xl mx-auto p-6">
+        <div className="bg-white rounded-xl shadow p-8 text-center space-y-4">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+            <Lock className="w-8 h-8 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">Claim Filing Locked</h2>
+          <p className="text-gray-600">{eligibility.reason}</p>
+          <div className="flex gap-3 justify-center">
+            <GovButton variant="outline" onClick={() => nav("/farmer/dashboard")}>Back to Dashboard</GovButton>
+            <GovButton variant="primary" onClick={() => nav("/farmer/insurance")}>Go to My Insurance</GovButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">

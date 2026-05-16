@@ -57,6 +57,16 @@ export function useSatelliteData(farmerId: string | null): UseSatelliteDataResul
           thumbnail_b64: backendData.satellite_analysis?.thumbnail_b64,
           computed_at: backendData.computed_at || backendData.satellite_analysis?.computed_at,
           cached: backendData.cached,
+          cropType: backendData.cropType,
+          secondaryCrop: backendData.secondaryCrop,
+          mixedCropFlag: backendData.mixedCropFlag,
+          cropConfidence: backendData.cropConfidence,
+          floodRisk: backendData.floodRisk,
+          analysisConfidence: backendData.analysisConfidence,
+          manualReviewRequired: backendData.manualReviewRequired,
+          qualityWarnings: backendData.qualityWarnings,
+          crop_display: backendData.satellite_analysis?.crop_display,
+          flood_display: backendData.satellite_analysis?.flood_display,
         };
         setData(flattened);
         setIsCached(backendData.cached || false);

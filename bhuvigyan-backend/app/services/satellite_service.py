@@ -5,6 +5,7 @@ import math
 from urllib.request import urlopen
 from datetime import datetime, date, timedelta
 from app.config import settings
+from app.services.satellite_confidence import wrap_analysis_with_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +78,10 @@ def _generate_fallback_flood(lat: float, lng: float):
         "flood_detected": False,
         "flood_area_sqm": 0,
         "flood_area_ha": 0,
+        "confidence": 0.0,
+        "risk_level": "Low",
         "source": "Simulated (GEE unavailable)",
-        "threshold_db": -15.0,
+        "threshold_db": -18.0,
     }
 
 
@@ -350,7 +353,7 @@ class SatelliteService:
             recent = sar.first()
             if recent is None:
                 return _generate_fallback_flood(lat, lng)
-            flood_threshold = -15.0
+            flood_threshold = -18.0
             flood_mask = recent.lt(flood_threshold)
             flood_area = flood_mask.multiply(ee.Image.pixelArea())
             area_stats = flood_area.reduceRegion(
@@ -361,12 +364,18 @@ class SatelliteService:
             ).getInfo()
             flood_sqm = round(area_stats.get('VV', 0), 2)
             region_area_sqm = math.pi * (buffer_m ** 2)
-            confidence = min(1.0, flood_sqm / (region_area_sqm * 0.05)) if region_area_sqm > 0 else 0.0
+            # Require at least 5% of the region to be below threshold for high confidence
+            coverage_ratio = flood_sqm / region_area_sqm if region_area_sqm > 0 else 0.0
+            confidence = min(1.0, coverage_ratio / 0.05) if coverage_ratio > 0.01 else 0.0
+            detected = flood_sqm > 5000 and coverage_ratio > 0.01
+            risk_level = "High" if detected and confidence > 0.6 else "Medium" if detected else "Low"
             return {
-                "flood_detected": flood_sqm > 100,
+                "flood_detected": detected,
                 "flood_area_sqm": flood_sqm,
                 "flood_area_ha": round(flood_sqm / 10000, 4),
                 "confidence": round(confidence, 2),
+                "risk_level": risk_level,
+                "coverage_pct": round(coverage_ratio * 100, 2),
                 "source": "Sentinel-1 GRD",
                 "threshold_db": flood_threshold
             }
@@ -375,19 +384,20 @@ class SatelliteService:
             return _generate_fallback_flood(lat, lng)
 
     def get_fire_alerts(self, lat: float, lng: float, radius_km: int = 5):
-        """Fetch fire alerts using NASA FIRMS API (more reliable than GEE ImageCollection)."""
+        """Fetch fire alerts using NASA FIRMS API. Skips silently if no MAP_KEY configured."""
+        from app.config import settings
         period_days = 14
+        map_key = settings.NASA_FIRMS_MAP_KEY
+        if not map_key:
+            return _generate_fallback_fire(lat, lng)
         try:
-            # Use NASA FIRMS direct API for accurate hotspot counts
             from urllib.request import urlopen
             bbox = f"{lng-0.1},{lat-0.1},{lng+0.1},{lat+0.1}"
-            url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/VIIRS_SNPP_NRT/{bbox}/1"
+            url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/VIIRS_SNPP_NRT/{map_key}/{bbox}/1"
             with urlopen(url, timeout=10) as resp:
                 text = resp.read().decode('utf-8')
             lines = text.strip().split("\n")
             fire_count = max(0, len(lines) - 1)
-            # Approximate closest distance: if hotspots exist, assume at least 2km away
-            # (API doesn't give per-hotspot distance without parsing lat/lng of each)
             closest_km = 0 if fire_count == 0 else 2
             return {
                 "fire_detected": fire_count > 0,
@@ -399,7 +409,7 @@ class SatelliteService:
                 "scan_date": datetime.today().strftime('%Y-%m-%d'),
             }
         except Exception as e:
-            logger.warning(f"NASA FIRMS API failed for ({lat},{lng}): {e}. Using fallback.")
+            logger.debug(f"NASA FIRMS API failed for ({lat},{lng}): {e}. Using fallback.")
             return _generate_fallback_fire(lat, lng)
 
     def get_satellite_tile_url(self, lat: float, lng: float, buffer_m: int = 1000):
@@ -473,30 +483,32 @@ class SatelliteService:
             logger.warning(f"Thumbnail generation failed: {e}")
             return ""
 
-    def get_full_analysis(self, lat: float, lng: float, buffer_m: int = 500):
+    def get_full_analysis(self, lat: float, lng: float, buffer_m: int = 500, state: str = ""):
         # Always try GEE first - only fall back if the actual GEE call fails
         if GEE_AVAILABLE:
             try:
                 if not GEE_INITIALIZED:
                     initialize_gee()
                 # Try to fetch real GEE data
-                return self._get_real_gee_analysis(lat, lng, buffer_m)
+                raw = self._get_real_gee_analysis(lat, lng, buffer_m)
+                return wrap_analysis_with_confidence(raw, state=state)
             except Exception as e:
                 logger.warning(f"GEE analysis failed for ({lat}, {lng}): {e}. Using fallback data.")
         else:
             logger.warning(f"GEE not available for ({lat}, {lng}). Using fallback data.")
 
         # Fallback to mock data
-        return {
+        raw = {
             "ndvi": _generate_fallback_ndvi(lat, lng),
             "ndwi": _generate_fallback_ndwi(lat, lng),
             "sar_flood": _generate_fallback_flood(lat, lng),
             "fire_alerts": _generate_fallback_fire(lat, lng),
-            "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "Sentinel-2 SR Harmonized", "bands": "B4-B3-B2"},
-            "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "Sentinel-2 SR Harmonized"},
+            "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "Simulated (GEE unavailable)", "bands": "B4-B3-B2"},
+            "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "Simulated (GEE unavailable)"},
             "thumbnail_b64": "",
             "computed_at": datetime.utcnow().isoformat()
         }
+        return wrap_analysis_with_confidence(raw, state=state)
 
     def _get_real_gee_analysis(self, lat: float, lng: float, buffer_m: int = 500):
         """Internal method to fetch real GEE data. Falls back to generated data if no images."""
@@ -518,8 +530,8 @@ class SatelliteService:
                 "ndwi": _generate_fallback_ndwi(lat, lng),
                 "sar_flood": self.get_sar_flood(lat, lng),
                 "fire_alerts": self.get_fire_alerts(lat, lng),
-                "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "Sentinel-2 SR Harmonized", "bands": "B4-B3-B2"},
-                "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "Sentinel-2 SR Harmonized"},
+                "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "Simulated (GEE unavailable)", "bands": "B4-B3-B2"},
+                "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "Simulated (GEE unavailable)"},
                 "thumbnail_b64": "",
                 "computed_at": datetime.utcnow().isoformat()
             }

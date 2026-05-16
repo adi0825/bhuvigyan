@@ -95,13 +95,17 @@ async def get_farm_satellite(
             return {"success": True, "data": cache, "cached": True}
 
     try:
-        analysis = sat_service.get_full_analysis(lat, lng, buffer_m=100)
+        analysis = sat_service.get_full_analysis(lat, lng, buffer_m=100, state=farmer.state_code or "")
     except Exception as e:
         return {"success": False, "error": "analysis_failed", "message": f"Satellite analysis failed: {str(e)}"}
     if isinstance(analysis, dict) and "error" in analysis:
         return {"success": False, "error": analysis["error"], "message": analysis.get("message", "Satellite analysis failed")}
     if isinstance(analysis.get("ndvi"), dict) and "error" in analysis["ndvi"]:
         return {"success": False, "error": analysis["ndvi"]["error"], "message": analysis["ndvi"]["message"]}
+
+    # Confidence engine results are now embedded in the analysis dict
+    crop_display = analysis.get("crop_display", {})
+    flood_display = analysis.get("flood_display", {})
 
     # Include farm info in response
     result = {
@@ -118,6 +122,19 @@ async def get_farm_satellite(
         "farm_lng": lng,
         "kgis_verified": farmer.is_verified,
         "satellite_analysis": analysis,
+        "cropType": crop_display.get("primary") if crop_display else None,
+        "secondaryCrop": crop_display.get("secondary") if crop_display else None,
+        "mixedCropFlag": analysis.get("mixed_crop_flag", False),
+        "cropConfidence": analysis.get("crop_confidence", 0),
+        "floodRisk": {
+            "flood_detected": flood_display.get("risk_level") != "Low" if flood_display else False,
+            "confidence": analysis.get("flood_confidence", 0),
+            "risk_level": flood_display.get("risk_level", "Low") if flood_display else "Low",
+            "reason": flood_display.get("reason", "") if flood_display else "",
+        },
+        "analysisConfidence": analysis.get("analysis_confidence", 0),
+        "manualReviewRequired": analysis.get("manual_review_required", False),
+        "qualityWarnings": analysis.get("quality_warnings", []),
         "computed_at": datetime.utcnow().isoformat(),
         "cached": False
     }
@@ -609,12 +626,18 @@ async def get_fire_alert_endpoint(
     radius_km: int = Query(10, ge=1, le=50),
     user: dict = Depends(get_current_farmer),
 ):
-    """NASA FIRMS fire alerts near coordinates."""
+    """NASA FIRMS fire alerts near coordinates. Returns fallback if no MAP_KEY configured."""
+    from app.config import settings
+    map_key = settings.NASA_FIRMS_MAP_KEY
+    if not map_key:
+        return {"success": True, "data": {
+            "lat": lat, "lng": lng, "radius_km": radius_km,
+            "fire_detected": False, "hotspot_count": 0,
+            "source": "Fallback (no NASA FIRMS key configured)",
+        }}
     import httpx
-    url = (
-        f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/"
-        f"VIIRS_SNPP_NRT/{lng-0.1},{lat-0.1},{lng+0.1},{lat+0.1}/1"
-    )
+    bbox = f"{lng-0.1},{lat-0.1},{lng+0.1},{lat+0.1}"
+    url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/VIIRS_SNPP_NRT/{map_key}/{bbox}/1"
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, timeout=10.0)
@@ -762,7 +785,8 @@ async def verify_land_satellite(
     if not start_date:
         start_date = (datetime.utcnow() - timedelta(days=120)).strftime('%Y-%m-%d')
 
-    analysis = sat_service.get_full_analysis(lat, lng, buffer_m=100)
+    state_name = request.get("state", "")
+    analysis = sat_service.get_full_analysis(lat, lng, buffer_m=100, state=state_name)
 
     if isinstance(analysis, dict) and "error" in analysis:
         return {"success": False, "error": analysis["error"], "message": analysis.get("message", "Satellite analysis failed")}
@@ -789,16 +813,19 @@ async def verify_land_satellite(
             fraud_score = 10
             fraud_risk = "LOW"
 
+    # Confidence engine results
+    crop_display = analysis.get("crop_display", {})
+    flood_display = analysis.get("flood_display", {})
+
     result = {
-        "lat": lat,
-        "lng": lng,
+        "lat": lat, "lng": lng,
         "ndvi": round(ndvi_value, 2) if ndvi_value is not None else None,
         "ndvi_label": ndvi_data.get("health_label") if isinstance(ndvi_data, dict) else None,
         "scan_date": ndvi_data.get("scan_date") if isinstance(ndvi_data, dict) else None,
         "cloud_cover_pct": ndvi_data.get("cloud_cover_pct") if isinstance(ndvi_data, dict) else None,
         "soil_moisture": ndwi_data.get("ndwi") if isinstance(ndwi_data, dict) else None,
         "moisture_label": ndwi_data.get("label") if isinstance(ndwi_data, dict) else None,
-        "flood_detected": sar_data.get("flood_detected") if isinstance(sar_data, dict) else None,
+        "flood_detected": flood_display.get("risk_level") != "Low" if flood_display else False,
         "flood_area_ha": sar_data.get("flood_area_ha") if isinstance(sar_data, dict) else None,
         "fire_detected": fire_data.get("fire_detected") if isinstance(fire_data, dict) else None,
         "hotspot_count": fire_data.get("hotspot_count") if isinstance(fire_data, dict) else None,
@@ -809,7 +836,15 @@ async def verify_land_satellite(
         "fraud_risk": fraud_risk,
         "crop_coverage": round((ndvi_value or 0.5) * 130) if ndvi_value is not None else None,
         "baseline_match": "10-Year Baseline: Agricultural land confirmed" if (ndvi_value is not None and ndvi_value > 0.2) else "Low vegetation — verify manually",
-        "sar_status": "Active" if (isinstance(sar_data, dict) and "error" not in sar_data) else "Unavailable",
+        "sar_status": f"Flood Risk: {flood_display.get('risk_level', 'Low')}" if (flood_display and flood_display.get('risk_level') != 'Low') else "Active — No Flood",
+        "crop_type": crop_display.get("primary") if crop_display else None,
+        "secondary_crop": crop_display.get("secondary") if crop_display else None,
+        "mixed_crop_flag": analysis.get("mixed_crop_flag", False),
+        "crop_confidence": analysis.get("crop_confidence", 0),
+        "flood_confidence": analysis.get("flood_confidence", 0),
+        "analysis_confidence": analysis.get("analysis_confidence", 0),
+        "manual_review_required": analysis.get("manual_review_required", False),
+        "quality_warnings": analysis.get("quality_warnings", []),
         "computed_at": datetime.utcnow().isoformat(),
         "start_date": start_date,
         "end_date": end_date,

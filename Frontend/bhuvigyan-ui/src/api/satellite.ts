@@ -105,6 +105,35 @@ export interface SatelliteData {
   thumbnail_b64?: string;
   computed_at?: string;
   cached?: boolean;
+  cropType?: string;
+  secondaryCrop?: string;
+  mixedCropFlag?: boolean;
+  cropConfidence?: number;
+  floodRisk?: {
+    flood_detected: boolean;
+    confidence: number;
+    risk_level: string;
+    reason?: string;
+    raw_sar_detected?: boolean;
+    raw_sar_confidence?: number;
+  };
+  analysisConfidence?: number;
+  manualReviewRequired?: boolean;
+  qualityWarnings?: string[];
+  crop_display?: {
+    primary: string;
+    secondary: string | null;
+    mixed: boolean;
+    confidence: number;
+    label: string;
+    review_needed: boolean;
+  };
+  flood_display?: {
+    label: string;
+    risk_level: string;
+    confidence: number;
+    reason: string;
+  };
 }
 
 export interface TimeseriesPoint {

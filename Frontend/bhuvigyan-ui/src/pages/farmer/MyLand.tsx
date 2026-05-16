@@ -1,57 +1,25 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  MapPin, Ruler, Sprout, FileCheck, AlertCircle, Loader2, Search, Satellite,
-  Droplets, ShieldCheck, ThermometerSun, Flame, Waves, Eye, TrendingUp,
-  Leaf, CloudRain, Sun, Wind, Calendar, Crosshair, BarChart3, ChevronRight,
-  Info, CheckCircle2, AlertTriangle, Navigation
+  MapPin, Sprout, AlertCircle, Loader2, Satellite,
+  TrendingUp, Crosshair, ChevronRight,
+  Info, CheckCircle2, AlertTriangle, Navigation, Plus, Download, Trash2,
+  ChevronLeft, X, MapPinned, Crop, Clock, Zap
 } from 'lucide-react';
-import { MapContainer, TileLayer, Polygon, Circle, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Marker, Popup, useMap } from 'react-leaflet';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ReferenceArea, PieChart, Pie, Cell
+} from 'recharts';
 import GovCard from '../../components/ui/GovCard';
 import EmptyState from '../../components/ui/EmptyState';
 import GovButton from '../../components/ui/GovButton';
-import { farmerApi } from '../../api/farmer';
-import api from '../../api/axios';
 import { useAuth } from '../../auth/AuthContext';
-import { useSatelliteData } from '../../hooks/useSatelliteData';
+import { useMyLand } from '../../hooks/useMyLand';
+import { myLandApi, type LandHolding, type SatelliteVerification, type VillageGeocodeResult } from '../../api/myLand';
 import 'leaflet/dist/leaflet.css';
 
-interface LandRecord {
-  summary: {
-    owner_name: string;
-    survey_number: string;
-    hissa_number: string;
-    area_acres: number;
-    area_hectares: number;
-    land_type: string;
-    village: string;
-    taluk: string;
-    hobli: string;
-    district: string;
-    centroid_lat: number;
-    centroid_lng: number;
-    polygon_available: boolean;
-    polygon_count: number;
-    kgis_verified: boolean;
-    rtc_success: boolean;
-    rtc_source: string;
-  };
-  polygon: {
-    found: boolean;
-    survey_number: string;
-    kgis_village_id: string;
-    polygons: number[][][];
-    centroid_lat: number;
-    centroid_lng: number;
-    area_ha_computed: number;
-    polygon_count: number;
-    geojson: any;
-  };
-  admin: any;
-  rtc: any;
-}
-
 const HA_TO_ACRES = 2.47105;
-function haToAcres(ha: number | string | undefined): string {
+function haToAcres(ha: number | string | undefined | null): string {
   const n = typeof ha === 'number' ? ha : parseFloat(ha || '0');
   if (isNaN(n) || n <= 0) return '—';
   return (n * HA_TO_ACRES).toFixed(2);
@@ -71,175 +39,781 @@ function ndviLabel(val: number): string {
   return 'Poor';
 }
 
-function getRecommendations(satData: any): string[] {
-  const recs: string[] = [];
-  const ndvi = satData?.ndvi?.ndvi;
-  const ndwi = satData?.ndwi?.ndwi;
-  const flood = satData?.sar_flood?.flood_detected;
-  const fire = satData?.fire?.detected;
+const CROP_COLORS = ['#16a34a', '#2563eb', '#d97706', '#7c3aed', '#dc2626', '#0891b2', '#be185d', '#65a30d'];
 
-  if (ndvi != null) {
-    if (ndvi < 0.2) {
-      recs.push('Crop health is critical. Check for pest infestation or nutrient deficiency immediately.');
-      recs.push('Consider consulting an agronomist for soil testing and fertiliser recommendation.');
-    } else if (ndvi < 0.4) {
-      recs.push('Crop health is below optimal. Increase irrigation and monitor for stress signs.');
-    } else if (ndvi >= 0.6) {
-      recs.push('Crop health is excellent. Maintain current irrigation and fertiliser schedule.');
-    }
-  }
-  if (ndwi != null) {
-    if (ndwi < -0.2) {
-      recs.push('Soil moisture is very low. Increase irrigation frequency immediately.');
-    } else if (ndwi < 0) {
-      recs.push('Soil moisture is moderate. Schedule irrigation in next 2–3 days.');
-    } else if (ndwi > 0.3) {
-      recs.push('Soil moisture is adequate. Avoid over-irrigation to prevent waterlogging.');
-    }
-  }
-  if (flood) {
-    recs.push('⚠️ Flood detected in farm area. Assess damage and contact insurance officer.');
-  }
-  if (fire) {
-    recs.push('🔥 Fire hotspot detected nearby. Monitor weather and keep fire breaks clear.');
-  }
-  if (recs.length === 0) {
-    recs.push('Satellite data is healthy. Continue regular farm monitoring.');
-  }
-  return recs;
-}
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
+  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
+  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
+];
 
-// Map layer controller component
-function LayerController({ activeLayer, rgbTileUrl, ndviTileUrl }: {
-  activeLayer: string;
-  rgbTileUrl?: string;
-  ndviTileUrl?: string;
-}) {
+const SURVEY_LABELS: Record<string, string> = {
+  'Andhra Pradesh': 'Survey Number', 'Telangana': 'Survey Number',
+  'Karnataka': 'Survey Number', 'Maharashtra': '7-12 Number / Gat Number',
+  'Madhya Pradesh': 'Khasra Number', 'Rajasthan': 'Khasra Number',
+  'Uttar Pradesh': 'Khasra Number', 'Gujarat': 'Survey Number / Gat Number',
+  'Punjab': 'Khasra Number', 'Haryana': 'Khasra Number',
+  'Tamil Nadu': 'Survey Number', 'Kerala': 'Survey Number',
+  'Odisha': 'Plot Number', 'Bihar': 'Khasra Number',
+  'Chhattisgarh': 'Khasra Number', 'Jharkhand': 'Khasra Number',
+  'West Bengal': 'Dag Number', 'Assam': 'Patta Number',
+};
+
+function LayerController({ activeLayer }: { activeLayer: string }) {
   const map = useMap();
   useEffect(() => {
-    // Force map refresh when layer changes
     setTimeout(() => { map.invalidateSize(); }, 100);
   }, [activeLayer, map]);
   return null;
 }
 
+// ─── ADD LAND HOLDING MODAL ────────────────────────────────────────────────
+
+interface AddLandHoldingModalProps {
+  farmerId: string;
+  onClose: () => void;
+  onAdded: () => void;
+}
+
+function AddLandHoldingModal({ farmerId, onClose, onAdded }: AddLandHoldingModalProps) {
+  const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Step 1 fields
+  const [state, setState] = useState('');
+  const [district, setDistrict] = useState('');
+  const [taluk, setTaluk] = useState('');
+  const [village, setVillage] = useState('');
+  const [surveyNumber, setSurveyNumber] = useState('');
+  const [landAreaAcres, setLandAreaAcres] = useState('');
+
+  // Bhuvan auto-suggest
+  const [villageSuggestions, setVillageSuggestions] = useState<VillageGeocodeResult | null>(null);
+  const [villageSearching, setVillageSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Step 2 fields
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [locationVerify, setLocationVerify] = useState<any>(null);
+  const [verifyingCoords, setVerifyingCoords] = useState(false);
+
+  // Step 3 fields
+  const [declaredCrop, setDeclaredCrop] = useState('');
+  const [season, setSeason] = useState('');
+  const [sowingDate, setSowingDate] = useState('');
+  const [hasMultipleCrops, setHasMultipleCrops] = useState(false);
+  const [secondaryCrop, setSecondaryCrop] = useState('');
+
+  const surveyLabel = SURVEY_LABELS[state] || 'Survey Number';
+
+  // Village auto-suggest with debounce
+  const handleVillageInput = useCallback((value: string) => {
+    setVillage(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.length < 3) {
+      setVillageSuggestions(null);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setVillageSearching(true);
+      try {
+        const res = await myLandApi.villageGeocode(value);
+        const data = (res.data as any)?.data || res.data;
+        setVillageSuggestions(data);
+      } catch { setVillageSuggestions(null); }
+      finally { setVillageSearching(false); }
+    }, 500);
+  }, []);
+
+  const selectVillage = (v: { village_name: string; district: string; taluk: string; latitude: number | null; longitude: number | null }) => {
+    setVillage(v.village_name);
+    if (v.district) setDistrict(v.district);
+    if (v.taluk) setTaluk(v.taluk);
+    if (v.latitude != null) setLatitude(String(v.latitude));
+    if (v.longitude != null) setLongitude(String(v.longitude));
+    setVillageSuggestions(null);
+  };
+
+  const verifyCoords = async () => {
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    if (isNaN(lat) || isNaN(lng) || !village || !district) return;
+    setVerifyingCoords(true);
+    try {
+      const res = await myLandApi.verifyCoordinates(lat, lng, village, district);
+      const data = (res.data as any)?.data || res.data;
+      setLocationVerify(data);
+    } catch { setLocationVerify({ verified: false, match: false, reason: 'Verification failed' }); }
+    finally { setVerifyingCoords(false); }
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await myLandApi.addLandHolding({
+        farmer_id: farmerId,
+        state, district, taluk, village, survey_number: surveyNumber,
+        land_area_acres: landAreaAcres ? parseFloat(landAreaAcres) : undefined,
+        latitude: latitude ? parseFloat(latitude) : undefined,
+        longitude: longitude ? parseFloat(longitude) : undefined,
+        declared_crop: declaredCrop || undefined,
+        season: season || undefined,
+        sowing_date: sowingDate || undefined,
+        has_multiple_crops: hasMultipleCrops,
+        secondary_crop: secondaryCrop || undefined,
+      });
+      onAdded();
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || err?.message || 'Failed to add land holding');
+    } finally { setSubmitting(false); }
+  };
+
+  const canProceedStep1 = state && district && taluk && village && surveyNumber;
+  const canSubmit = canProceedStep1;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-[#1a1a1a]">Add Land Holding</h2>
+            <p className="text-xs text-[#6b7280] mt-0.5">Step {step} of 4</p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+        </div>
+
+        {/* Progress bar */}
+        <div className="px-5 pt-4">
+          <div className="flex gap-1.5">
+            {[1, 2, 3, 4].map(s => (
+              <div key={s} className={`h-1.5 flex-1 rounded-full transition-colors ${s <= step ? 'bg-[#1a6b3c]' : 'bg-gray-200'}`} />
+            ))}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {step === 1 && (
+            <>
+              <h3 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2"><MapPinned className="w-4 h-4 text-[#1a6b3c]" /> Land Identity</h3>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">State</label>
+                <select value={state} onChange={e => setState(e.target.value)} className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]">
+                  <option value="">Select state</option>
+                  {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">District</label>
+                <input value={district} onChange={e => setDistrict(e.target.value)} placeholder="Enter district" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Taluk / Mandal</label>
+                <input value={taluk} onChange={e => setTaluk(e.target.value)} placeholder="Enter taluk or mandal" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+              </div>
+              <div className="relative">
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Village</label>
+                <div className="relative">
+                  <input value={village} onChange={e => handleVillageInput(e.target.value)} placeholder="Type village name" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c] pr-8" />
+                  {villageSearching && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-[#1a6b3c]" />}
+                </div>
+                {villageSuggestions?.found && villageSuggestions.villages && villageSuggestions.villages.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {villageSuggestions.villages.slice(0, 8).map((v, i) => (
+                      <button key={i} onClick={() => selectVillage(v)} className="w-full text-left p-2.5 hover:bg-gray-50 border-b border-gray-100 last:border-0">
+                        <p className="text-sm font-medium text-[#1a1a1a]">{v.village_name}</p>
+                        <p className="text-[10px] text-[#6b7280]">{v.taluk}, {v.district}, {v.state}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {villageSuggestions && !villageSuggestions.found && village && village.length >= 3 && (
+                  <p className="text-[10px] text-amber-600 mt-1">{villageSuggestions.error || 'Village not found. Please verify or add coordinates manually.'}</p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">{surveyLabel}</label>
+                <input value={surveyNumber} onChange={e => setSurveyNumber(e.target.value)} placeholder={`Enter ${surveyLabel.toLowerCase()}`} className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Land Area (acres)</label>
+                <input type="number" value={landAreaAcres} onChange={e => setLandAreaAcres(e.target.value)} placeholder="Optional" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <h3 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2"><Crosshair className="w-4 h-4 text-[#1a6b3c]" /> Location Pin</h3>
+              <p className="text-xs text-[#6b7280]">Optional: Add coordinates to improve satellite accuracy.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Latitude</label>
+                  <input type="number" step="any" value={latitude} onChange={e => setLatitude(e.target.value)} placeholder="e.g. 12.9716" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Longitude</label>
+                  <input type="number" step="any" value={longitude} onChange={e => setLongitude(e.target.value)} placeholder="e.g. 77.5946" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+                </div>
+              </div>
+              {latitude && longitude && village && district && (
+                <div>
+                  <GovButton variant="outline" size="sm" onClick={verifyCoords} loading={verifyingCoords}>
+                    <Navigation className="w-3 h-3 mr-1" /> Verify Location
+                  </GovButton>
+                  {locationVerify && (
+                    <div className={`mt-2 p-2.5 rounded-lg text-xs ${locationVerify.match ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-orange-50 border border-orange-200 text-orange-700'}`}>
+                      {locationVerify.match ? <CheckCircle2 className="w-3 h-3 inline mr-1" /> : <AlertTriangle className="w-3 h-3 inline mr-1" />}
+                      {locationVerify.reason}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                <p className="text-[10px] text-blue-700"><Info className="w-3 h-3 inline mr-1" />You can also draw your land boundary on the map after adding the holding.</p>
+              </div>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
+              <h3 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2"><Crop className="w-4 h-4 text-[#1a6b3c]" /> Crop Details</h3>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Current Crop</label>
+                <input value={declaredCrop} onChange={e => setDeclaredCrop(e.target.value)} placeholder="e.g. Paddy, Sugarcane, Wheat" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Season</label>
+                <select value={season} onChange={e => setSeason(e.target.value)} className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]">
+                  <option value="">Select season</option>
+                  <option value="Kharif">Kharif (Jun–Oct)</option>
+                  <option value="Rabi">Rabi (Nov–Mar)</option>
+                  <option value="Zaid">Zaid (Apr–Jun)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Approximate Sowing Date</label>
+                <input type="date" value={sowingDate} onChange={e => setSowingDate(e.target.value)} className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-semibold text-[#6b7280]">Are there multiple crops on this land?</label>
+                <button onClick={() => setHasMultipleCrops(!hasMultipleCrops)} className={`px-3 py-1 rounded-full text-xs font-bold ${hasMultipleCrops ? 'bg-[#1a6b3c] text-white' : 'bg-gray-100 text-gray-600'}`}>
+                  {hasMultipleCrops ? 'Yes' : 'No'}
+                </button>
+              </div>
+              {hasMultipleCrops && (
+                <div>
+                  <label className="text-xs font-semibold text-[#6b7280] uppercase tracking-wide">Secondary Crop</label>
+                  <input value={secondaryCrop} onChange={e => setSecondaryCrop(e.target.value)} placeholder="e.g. Tur, Soybean" className="w-full mt-1 p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1a6b3c]/20 focus:border-[#1a6b3c]" />
+                </div>
+              )}
+            </>
+          )}
+
+          {step === 4 && (
+            <>
+              <h3 className="text-sm font-bold text-[#1a1a1a] flex items-center gap-2"><Satellite className="w-4 h-4 text-[#1a6b3c]" /> Satellite Verification</h3>
+              <p className="text-xs text-[#6b7280]">Review your land holding details before triggering satellite analysis.</p>
+              <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                {[
+                  { label: 'State', value: state },
+                  { label: 'District', value: district },
+                  { label: 'Taluk/Mandal', value: taluk },
+                  { label: 'Village', value: village },
+                  { label: surveyLabel, value: surveyNumber },
+                  { label: 'Area', value: landAreaAcres ? `${landAreaAcres} acres` : '—' },
+                  { label: 'Coordinates', value: latitude && longitude ? `${latitude}, ${longitude}` : 'Not provided' },
+                  { label: 'Crop', value: declaredCrop || '—' },
+                  { label: 'Season', value: season || '—' },
+                ].map((item, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="text-[#6b7280]">{item.label}</span>
+                    <span className="font-medium text-[#1a1a1a]">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 bg-[#f0fdf4] rounded-lg border border-green-100">
+                <p className="text-xs text-[#1a6b3c]"><Zap className="w-3 h-3 inline mr-1" />Click "Verify My Land with Satellite" to start the analysis. This will fetch real satellite data and run multi-crop detection.</p>
+              </div>
+            </>
+          )}
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" /><span>{error}</span>
+            </div>
+          )}
+
+          {/* Navigation */}
+          <div className="flex items-center justify-between pt-2">
+            {step > 1 ? (
+              <GovButton variant="ghost" size="sm" onClick={() => setStep(step - 1)}>
+                <ChevronLeft className="w-4 h-4 mr-1" /> Back
+              </GovButton>
+            ) : <div />}
+            {step < 4 ? (
+              <GovButton variant="primary" size="sm" onClick={() => setStep(step + 1)} disabled={step === 1 && !canProceedStep1}>
+                Next <ChevronRight className="w-4 h-4 ml-1" />
+              </GovButton>
+            ) : (
+              <GovButton variant="primary" size="sm" onClick={handleSubmit} loading={submitting} disabled={!canSubmit}>
+                <Satellite className="w-4 h-4 mr-1" /> Verify My Land with Satellite
+              </GovButton>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CROP MIX DONUT CHART ───────────────────────────────────────────────────
+
+function CropMixChart({ crops }: { crops: Array<{ name: string; percentage: number }> }) {
+  const data = crops.map(c => ({ name: c.name, value: c.percentage }));
+  return (
+    <div className="flex items-center gap-4">
+      <div className="w-32 h-32">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} cx="50%" cy="50%" innerRadius={30} outerRadius={55} paddingAngle={2} dataKey="value">
+              {data.map((_, i) => <Cell key={i} fill={CROP_COLORS[i % CROP_COLORS.length]} />)}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="space-y-1.5 flex-1">
+        {crops.map((c, i) => (
+          <div key={i} className="flex items-center gap-2 text-xs">
+            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CROP_COLORS[i % CROP_COLORS.length] }} />
+            <span className="text-[#1a1a1a] font-medium truncate">{c.name}</span>
+            <span className="text-[#6b7280] ml-auto">{c.percentage}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── NDVI ZONE TIMELINE CHART ───────────────────────────────────────────────
+
+function NDVIZoneChart({ zoneLines, timeseries }: { zoneLines: Array<{ zone: string; color: string; data: Array<{ date: string; ndvi: number }> }>; timeseries: Array<{ date: string; ndvi_mean: number }> }) {
+  // If we have zone lines, use those. Otherwise use the main timeseries.
+  if (zoneLines && zoneLines.length > 0) {
+    // Merge all zone data points into a unified timeline keyed by date
+    const allDates = new Set<string>();
+    zoneLines.forEach(zl => zl.data.forEach(d => allDates.add(d.date)));
+    const sortedDates = Array.from(allDates).sort();
+    const chartData = sortedDates.map(date => {
+      const point: any = { date };
+      zoneLines.forEach(zl => {
+        const match = zl.data.find(d => d.date === date);
+        point[zl.zone] = match ? match.ndvi : null;
+      });
+      return point;
+    });
+
+    return (
+      <ResponsiveContainer width="100%" height={250}>
+        <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f3f4f6" />
+          <XAxis dataKey="date" stroke="#9ca3af" fontSize={9} tickLine={false} axisLine={false} />
+          <YAxis domain={[-0.2, 1.0]} stroke="#9ca3af" fontSize={9} tickLine={false} axisLine={false} />
+          <Tooltip />
+          <ReferenceArea y1={0.0} y2={0.1} fill="#fef2f2" fillOpacity={0.3} />
+          <ReferenceArea y1={0.1} y2={0.3} fill="#fffbeb" fillOpacity={0.3} />
+          <ReferenceArea y1={0.3} y2={0.6} fill="#f0fdf4" fillOpacity={0.3} />
+          <ReferenceArea y1={0.6} y2={1.0} fill="#dcfce7" fillOpacity={0.3} />
+          {zoneLines.map((zl, i) => (
+            <Line key={i} type="monotone" dataKey={zl.zone} stroke={zl.color} strokeWidth={2} dot={false} connectNulls />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  // Fallback: single-line timeseries
+  if (timeseries && timeseries.length > 0) {
+    const data = timeseries.map(t => ({ date: t.date, ndvi: t.ndvi_mean }));
+    return (
+      <ResponsiveContainer width="100%" height={250}>
+        <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f3f4f6" />
+          <XAxis dataKey="date" stroke="#9ca3af" fontSize={9} tickLine={false} axisLine={false} />
+          <YAxis domain={[-0.2, 1.0]} stroke="#9ca3af" fontSize={9} tickLine={false} axisLine={false} />
+          <Tooltip />
+          <ReferenceArea y1={0.0} y2={0.1} fill="#fef2f2" fillOpacity={0.3} />
+          <ReferenceArea y1={0.1} y2={0.3} fill="#fffbeb" fillOpacity={0.3} />
+          <ReferenceArea y1={0.3} y2={0.6} fill="#f0fdf4" fillOpacity={0.3} />
+          <ReferenceArea y1={0.6} y2={1.0} fill="#dcfce7" fillOpacity={0.3} />
+          <Line type="monotone" dataKey="ndvi" stroke="#1a6b3c" strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  return <p className="text-xs text-[#6b7280] text-center py-8">No NDVI timeline data available</p>;
+}
+
+// ─── LAND PROFILE CARD ──────────────────────────────────────────────────────
+
+function LandProfileCard({ holding, verification, onVerify, onDownload, onDelete, verifying }: {
+  holding: LandHolding;
+  verification: SatelliteVerification | null;
+  onVerify: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+  verifying: boolean;
+}) {
+  const [activeMapLayer, setActiveMapLayer] = useState<'satellite' | 'rgb' | 'ndvi'>('satellite');
+  const v = verification;
+  const hasCoords = holding.latitude != null && holding.longitude != null;
+  const center = { lat: holding.latitude ?? 12.97, lng: holding.longitude ?? 77.59 };
+
+  return (
+    <GovCard className="p-0 overflow-hidden">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-bold text-[#1a1a1a]">{holding.label}</h3>
+          <p className="text-xs text-[#6b7280]">Survey No. {holding.survey_number}, {holding.village}, {holding.district}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {v ? (
+            <span className={`text-[10px] px-2 py-1 rounded-full font-bold uppercase ${
+              v.verification_status === 'Auto-verified' ? 'bg-green-100 text-green-700' :
+              v.verification_status === 'Anomaly detected' ? 'bg-red-100 text-red-700' :
+              'bg-amber-100 text-amber-700'
+            }`}>{v.verification_status}</span>
+          ) : (
+            <span className="text-[10px] px-2 py-1 rounded-full font-bold uppercase bg-gray-100 text-gray-500">Pending</span>
+          )}
+          <button onClick={onDelete} className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-0 lg:gap-6 p-4">
+        {/* Left column — stats */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Area + NDVI + Moisture summary */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 bg-[#f0fdf4] rounded-lg border border-green-100 text-center">
+              <p className="text-[10px] text-[#6b7280] uppercase font-semibold">Area</p>
+              <p className="text-lg font-bold text-[#1a1a1a]">{v?.area_verified_ha ? haToAcres(v.area_verified_ha) : holding.land_area_acres ? `${holding.land_area_acres}` : '—'}</p>
+              <p className="text-[10px] text-[#9ca3af]">{v?.area_verified_ha ? `${v.area_verified_ha} ha` : 'acres'}</p>
+            </div>
+            <div className="p-3 rounded-lg border text-center" style={{ borderColor: v?.ndvi_mean ? ndviColor(v.ndvi_mean) + '30' : '#e5e7eb', background: v?.ndvi_mean ? ndviColor(v.ndvi_mean) + '10' : '#f9fafb' }}>
+              <p className="text-[10px] text-[#6b7280] uppercase font-semibold">NDVI</p>
+              <p className="text-lg font-bold" style={{ color: v?.ndvi_mean ? ndviColor(v.ndvi_mean) : '#1a1a1a' }}>{v?.ndvi_mean ? v.ndvi_mean.toFixed(2) : '—'}</p>
+              <p className="text-[10px] text-[#9ca3af]">{v?.ndvi_status || 'No data'}</p>
+            </div>
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-center">
+              <p className="text-[10px] text-[#6b7280] uppercase font-semibold">Moisture</p>
+              <p className="text-sm font-bold text-blue-700">{v?.soil_moisture || '—'}</p>
+              <p className="text-[10px] text-[#9ca3af]">{v?.last_satellite_date || 'No scan'}</p>
+            </div>
+          </div>
+
+          {/* Area match */}
+          {v?.area_match_status && (
+            <div className={`p-2.5 rounded-lg text-xs flex items-center gap-2 ${v.area_match_status === 'Matched' ? 'bg-green-50 border border-green-100 text-green-700' : 'bg-amber-50 border border-amber-100 text-amber-700'}`}>
+              {v.area_match_status === 'Matched' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+              Area: {v.area_match_status} (declared {v.area_declared_ha?.toFixed(2)} ha, verified {v.area_verified_ha?.toFixed(2)} ha)
+            </div>
+          )}
+
+          {/* Crop Mix */}
+          {v?.crop_mix && v.crop_mix.crops.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-[#1a1a1a] flex items-center gap-1"><Sprout className="w-3 h-3 text-[#1a6b3c]" /> Crop Mix</h4>
+                {/* Confidence badge */}
+                {v.crop_mix.confidence != null && (
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                    v.crop_mix.confidence >= 0.75 ? 'bg-green-100 text-green-700' :
+                    v.crop_mix.confidence >= 0.5 ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {v.crop_mix.confidence >= 0.75 ? 'High Confidence' :
+                     v.crop_mix.confidence >= 0.5 ? 'Medium Confidence' :
+                     'Low Confidence'}
+                    {' '}({Math.round((v.crop_mix.confidence || 0) * 100)}%)
+                  </span>
+                )}
+              </div>
+              <CropMixChart crops={v.crop_mix.crops} />
+
+              {/* Mixed-crop / uncertainty banner */}
+              {v.crop_mix.crops.length > 1 && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg text-[10px] text-blue-700 flex items-start gap-1">
+                  <Info className="w-3 h-3 shrink-0 mt-0.5" />
+                  <span>Multiple crop signatures detected. Primary: {v.crop_mix.crops[0]?.name} ({v.crop_mix.crops[0]?.percentage}%). Mixed-crop field — review recommended.</span>
+                </div>
+              )}
+
+              {v.crop_mix.confidence < 0.6 && v.crop_mix.flag && (
+                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-700 flex items-start gap-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />{v.crop_mix.flag}
+                </div>
+              )}
+              {v.crop_mix.intercropping && (
+                <p className="text-[10px] text-[#1a6b3c] mt-1"><CheckCircle2 className="w-3 h-3 inline mr-1" />Intercropping detected</p>
+              )}
+            </div>
+          )}
+
+          {/* Data unavailable state */}
+          {(!v?.crop_mix || v.crop_mix.crops.length === 0) && v && (
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-center">
+              <p className="text-xs text-gray-500 font-medium">Crop data unavailable</p>
+              <p className="text-[10px] text-gray-400 mt-1">Latest satellite observation not found. Cloud cover may be blocking optical sensors, or the area is outside current coverage. Try again later or use cached observation.</p>
+            </div>
+          )}
+
+          {/* Anomalies */}
+          {v?.anomalies && v.anomalies.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold text-[#1a1a1a] mb-2 flex items-center gap-1"><AlertTriangle className="w-3 h-3 text-red-500" /> Anomaly Alerts</h4>
+              <div className="space-y-1.5">
+                {v.anomalies.map((a, i) => (
+                  <div key={i} className={`p-2 rounded-lg text-[10px] flex items-start gap-1.5 ${a.severity === 'high' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />{a.description}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Truth Packet Panel */}
+          {v?.truth_packet && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => {}}
+                className="w-full px-3 py-2 bg-gray-50 flex items-center justify-between text-xs font-bold text-[#1a1a1a] hover:bg-gray-100"
+              >
+                <span className="flex items-center gap-1"><Info className="w-3 h-3 text-[#1a6b3c]" /> Truth Packet</span>
+                <span className="text-[10px] text-gray-500 font-normal">Evidence summary</span>
+              </button>
+              <div className="p-3 space-y-2 text-[10px]">
+                {/* Evidence layers */}
+                {(() => {
+                  const tp = v.truth_packet as any;
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="p-2 bg-green-50 rounded border border-green-100">
+                          <span className="text-green-700 font-semibold">Location</span>
+                          <p className="text-gray-600 mt-0.5">{tp?.land_identity?.village}, {tp?.land_identity?.district}</p>
+                          <p className="text-gray-500">Survey No: {tp?.land_identity?.survey_number}</p>
+                        </div>
+                        <div className="p-2 bg-blue-50 rounded border border-blue-100">
+                          <span className="text-blue-700 font-semibold">Satellite Source</span>
+                          <p className="text-gray-600 mt-0.5">{tp?.satellite_data?.source || 'N/A'}</p>
+                          <p className="text-gray-500">Scenes: {tp?.satellite_data?.scenes_count || 0}</p>
+                        </div>
+                      </div>
+                      {/* Confidence & flags */}
+                      {tp?.verification?.flags && tp.verification.flags.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="font-semibold text-gray-700">Flags & Uncertainty:</span>
+                          {tp.verification.flags.map((flag: any, i: number) => (
+                            <div key={i} className={`flex items-start gap-1 p-1.5 rounded ${flag.severity === 'info' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                              <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                              <span>{flag.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* Recommendation */}
+                      {tp?.verification?.recommendation && (
+                        <div className="p-2 bg-gray-50 rounded border border-gray-100 text-gray-600">
+                          <span className="font-semibold text-gray-700">Recommendation:</span>{' '}
+                          {tp.verification.recommendation}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Verify button / Progress */}
+          {!v ? (
+            <div>
+              <GovButton variant="primary" fullWidth onClick={onVerify} loading={verifying}>
+                <Satellite className="w-4 h-4 mr-2" /> {verifying ? 'Analyzing crop patterns...' : 'Verify My Land with Satellite'}
+              </GovButton>
+              {verifying && (
+                <div className="mt-3 space-y-1">
+                  <p className="text-[10px] text-[#6b7280] font-semibold uppercase tracking-wide">Pipeline Progress</p>
+                  <div className="space-y-1">
+                    {[
+                      { step: 'village_resolution', label: 'Resolving village' },
+                      { step: 'aoi_geometry', label: 'Building AOI geometry' },
+                      { step: 'scene_search', label: 'Searching satellite scenes' },
+                      { step: 'ndvi_computation', label: 'Computing NDVI' },
+                      { step: 'soil_moisture', label: 'Fetching soil moisture' },
+                      { step: 'crop_classification', label: 'Classifying crops' },
+                      { step: 'ndvi_timeline', label: 'Building NDVI timeline' },
+                      { step: 'historical_baseline', label: 'Checking historical baseline' },
+                    ].map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[10px]">
+                        <div className={`w-1.5 h-1.5 rounded-full ${i < 3 ? 'bg-[#1a6b3c]' : i === 3 ? 'bg-amber-400 animate-pulse' : 'bg-gray-300'}`} />
+                        <span className={i < 3 ? 'text-[#1a6b3c] font-medium' : 'text-[#9ca3af]'}>{p.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <GovButton variant="outline" size="sm" onClick={onVerify}>
+                <Satellite className="w-3 h-3 mr-1" /> Re-verify
+              </GovButton>
+              <GovButton variant="outline" size="sm" onClick={onDownload}>
+                <Download className="w-3 h-3 mr-1" /> Download Land Profile
+              </GovButton>
+            </div>
+          )}
+
+          {/* Radar fallback notice */}
+          {v?.used_radar_fallback && (
+            <div className="p-2 bg-blue-50 border border-blue-100 rounded-lg text-[10px] text-blue-700 flex items-center gap-1">
+              <Info className="w-3 h-3" /> Optical data unavailable due to cloud cover. Radar data used.
+            </div>
+          )}
+
+          {/* Source info */}
+          {v?.source && (
+            <div className="flex items-center gap-1 text-[10px] text-[#9ca3af]">
+              <Clock className="w-3 h-3" />
+              Live data fetched on {v.last_satellite_date || '—'} · Source: {v.source}
+            </div>
+          )}
+        </div>
+
+        {/* Right column — Map + NDVI Chart */}
+        <div className="lg:col-span-3 space-y-4">
+          {/* Map */}
+          <div className="h-80 rounded-lg overflow-hidden border border-gray-200 relative">
+            {hasCoords ? (
+              <MapContainer center={[center.lat, center.lng]} zoom={15} scrollWheelZoom={false} style={{ height: '100%', width: '100%' }} attributionControl={false}>
+                <LayerController activeLayer={activeMapLayer} />
+                <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+                {v?.tile_urls?.ndvi && activeMapLayer === 'ndvi' && <TileLayer url={v.tile_urls.ndvi} opacity={0.8} />}
+                <Circle center={[center.lat, center.lng]} radius={200} pathOptions={{ color: '#1a6b3c', fillColor: '#1a6b3c', fillOpacity: 0.15, weight: 2, dashArray: '5, 5' }} />
+                <Marker position={[center.lat, center.lng]}>
+                  <Popup><div className="text-xs font-bold">Survey No: {holding.survey_number}</div></Popup>
+                </Marker>
+              </MapContainer>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-100">
+                <MapPin className="w-8 h-8 opacity-30" />
+              </div>
+            )}
+            {/* Layer toggle */}
+            <div className="absolute top-2 right-2 flex gap-1 bg-white/90 rounded-lg p-1 shadow-sm">
+              {(['satellite', 'ndvi'] as const).map(layer => (
+                <button key={layer} onClick={() => setActiveMapLayer(layer)} className={`text-[9px] font-bold px-2 py-1 rounded ${activeMapLayer === layer ? 'bg-[#1a6b3c] text-white' : 'text-gray-500'}`}>
+                  {layer === 'satellite' ? 'Sat' : 'NDVI'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* NDVI Zone Timeline */}
+          <div>
+            <h4 className="text-xs font-bold text-[#1a1a1a] mb-2 flex items-center gap-1"><TrendingUp className="w-3 h-3 text-[#1a6b3c]" /> NDVI Timeline</h4>
+            <div className="bg-white rounded-lg border border-gray-200 p-2">
+              <NDVIZoneChart zoneLines={v?.zone_lines || []} timeseries={v?.ndvi_timeseries || []} />
+              {/* Reference band legend */}
+              <div className="flex items-center gap-3 mt-2 text-[9px] text-[#6b7280]">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-100" /> Bare soil</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-100" /> Sparse/stressed</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-100" /> Growing</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-200" /> Dense</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </GovCard>
+  );
+}
+
+// ─── MAIN MY LAND PAGE ──────────────────────────────────────────────────────
+
 export default function MyLand() {
   const { user } = useAuth();
   const farmerId = user?.userId || '';
-  const { data: satData, loading: satLoading } = useSatelliteData(farmerId);
+  const { holdings, loading, error, refetch, addHolding, verifyHolding, verificationLoading } = useMyLand(farmerId);
 
-  const [landRecord, setLandRecord] = useState<LandRecord | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [fetching, setFetching] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [verificationData, setVerificationData] = useState<Record<string, SatelliteVerification>>({});
+  const [downloading, setDownloading] = useState<string | null>(null);
 
-  const [kgisVillageId, setKgisVillageId] = useState('');
-  const [kgisVillageCode, setKgisVillageCode] = useState('');
-  const [activeMapLayer, setActiveMapLayer] = useState<'satellite' | 'rgb' | 'ndvi' | 'hybrid'>('satellite');
-
-  const [surveyNumber, setSurveyNumber] = useState('');
-  const [hissaNumber, setHissaNumber] = useState('1');
-
-  useEffect(() => { fetchInitialData(); }, []);
-
-  const fetchInitialData = async () => {
-    setLoading(true);
-    setFetchError(null);
-    try {
-      const r = await farmerApi.getProfile();
-      const p = (r.data as any)?.data ?? r.data;
-      setProfile(p);
-      if (p?.surveyNumber) setSurveyNumber(p.surveyNumber);
-
-      if (p?.village && p?.district && p?.taluk) {
-        let kvId = '';
-        // Only call admin-hierarchy if we have a proper numeric village code
-        const villageCode = p.villageId || p.villageCode;
-        if (villageCode && /^\d+$/.test(String(villageCode))) {
+  // Load verification data for holdings that have been verified
+  useEffect(() => {
+    const loadVerifications = async () => {
+      for (const h of holdings) {
+        if (h.satellite_verified && !verificationData[h.id]) {
           try {
-            const kgisRes = await api.get('/land/admin-hierarchy', {
-              params: { code: villageCode, type: 'lgd' }
-            });
-            if (kgisRes?.data?.found) {
-              setKgisVillageCode(kgisRes.data.village_code);
-              kvId = kgisRes.data.village_code?.replace(/^0+/, '') || '';
-              setKgisVillageId(kvId);
+            const res = await myLandApi.getLandHolding(h.id);
+            const data = (res.data as any)?.data || res.data;
+            if (data?.verification) {
+              setVerificationData(prev => ({ ...prev, [h.id]: data.verification }));
             }
           } catch { /* ignore */ }
         }
-
-        if (p?.surveyNumber) {
-          try {
-            const res = await api.post('/land/fetch-rtc', {
-              district: p.district, taluk: p.taluk, hobli: p.hobli || '',
-              village: p.village, survey_number: p.surveyNumber, hissa_number: '1',
-              kgis_village_id: kvId, lat: p.latitude, lng: p.longitude
-            });
-            setLandRecord(res.data);
-          } catch (err: any) { console.log('RTC fetch failed:', err?.message); }
-        }
-      } else {
-        setFetchError('Profile incomplete. Please update your land details (district, taluk, village).');
       }
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message || 'Failed to fetch land record';
-      setFetchError(msg);
-    } finally { setLoading(false); }
+    };
+    if (holdings.length > 0) loadVerifications();
+  }, [holdings]);
+
+  const handleVerify = async (holdingId: string) => {
+    const result = await verifyHolding(holdingId);
+    if (result) {
+      setVerificationData(prev => ({ ...prev, [holdingId]: result }));
+    }
   };
 
-  const handleFetchRTC = async () => {
-    if (!profile) return;
-    setFetching(true); setFetchError(null);
+  const handleDownload = async (holdingId: string) => {
+    setDownloading(holdingId);
     try {
-      const res = await api.post('/land/fetch-rtc', {
-        district: profile.district, taluk: profile.taluk, hobli: profile.hobli || '',
-        village: profile.village, survey_number: surveyNumber, hissa_number: hissaNumber,
-        kgis_village_id: kgisVillageId, kgis_village_code: kgisVillageCode,
-        lat: profile.latitude, lng: profile.longitude
-      });
-      setLandRecord(res.data);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message || 'Failed to fetch RTC';
-      setFetchError(msg);
-    } finally { setFetching(false); }
+      const res = await myLandApi.getTruthPacket(holdingId);
+      const data = (res.data as any)?.data || res.data;
+      if (data?.text) {
+        const blob = new Blob([data.text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `land-verification-${holdingId}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch { /* ignore */ }
+    finally { setDownloading(null); }
   };
 
-  const summary = landRecord?.summary;
-  const polygonData = landRecord?.polygon;
-  const hasRealPolygon = polygonData?.found && polygonData?.polygons && polygonData.polygons.length > 0;
-  // Check BOTH KGIS summary AND profile coordinates
-  const hasCoords = (summary?.centroid_lat != null && summary?.centroid_lng != null)
-    || (profile?.latitude != null && profile?.longitude != null);
-  const center = useMemo(() => ({
-    lat: summary?.centroid_lat ?? profile?.latitude ?? null,
-    lng: summary?.centroid_lng ?? profile?.longitude ?? null
-  }), [summary, profile]);
-
-  const ndviVal = satData?.ndvi?.ndvi ?? null;
-  const ndwiVal = satData?.ndwi?.ndwi ?? null;
-  const recommendations = useMemo(() => getRecommendations(satData), [satData]);
-
-  // GEE tile URLs from satellite data
-  const rgbTileUrl = satData?.satellite_tile?.tile_url || '';
-  const ndviTileUrl = satData?.ndvi_tile?.tile_url || '';
-
-  // Build overlay tile URLs based on active layer
-  const baseTileUrl = activeMapLayer === 'satellite'
-    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const handleDelete = async (holdingId: string) => {
+    if (!confirm('Remove this land holding?')) return;
+    await myLandApi.deleteLandHolding(holdingId);
+    refetch();
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-[#1a6b3c]" />
       </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <EmptyState icon={MapPin} title="Profile not found" message="Please complete your profile to view land records." />
     );
   }
 
@@ -250,532 +824,63 @@ export default function MyLand() {
         <div>
           <h1 className="text-2xl font-bold text-[#1a1a1a]">My Land</h1>
           <p className="text-sm text-[#6b7280] mt-1">
-            {profile?.village && profile?.district
-              ? `${profile.village}, ${profile.taluk}, ${profile.district}`
-              : 'Complete your profile to see land details'}
+            {holdings.length > 0
+              ? `${holdings.length} land holding${holdings.length > 1 ? 's' : ''} registered`
+              : 'Add your first land holding to get started'}
           </p>
         </div>
-        <GovButton variant="outline" size="sm" onClick={fetchInitialData}>
-          <Satellite className="w-4 h-4 mr-1" /> Refresh from KGIS
+        <GovButton variant="primary" onClick={() => setShowAddModal(true)}>
+          <Plus className="w-4 h-4 mr-1" /> Add Land Holding
         </GovButton>
       </div>
 
-      {/* Key Metrics Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <GovCard className="flex items-center gap-3 p-4">
-          <div className="w-10 h-10 rounded-full bg-[#d1fae5] flex items-center justify-center shrink-0">
-            <Ruler className="w-5 h-5 text-[#1a6b3c]" />
-          </div>
-          <div>
-            <p className="text-xs text-[#6b7280]">Total Area</p>
-            <p className="text-lg font-bold text-[#1a1a1a]">
-              {summary?.area_hectares != null ? `${haToAcres(summary.area_hectares)} ac` : profile?.landAreaHa != null ? `${haToAcres(profile.landAreaHa)} ac` : '—'}
-            </p>
-            <p className="text-[10px] text-[#9ca3af]">
-              {summary?.area_hectares != null ? `${summary.area_hectares} ha` : profile?.landAreaHa != null ? `${profile.landAreaHa} ha` : ''}
-            </p>
-          </div>
-        </GovCard>
-
-        <GovCard className="flex items-center gap-3 p-4">
-          <div className="w-10 h-10 rounded-full bg-[#dbeafe] flex items-center justify-center shrink-0">
-            <Sprout className="w-5 h-5 text-[#2563eb]" />
-          </div>
-          <div>
-            <p className="text-xs text-[#6b7280]">Crop Type</p>
-            <p className="text-lg font-bold text-[#1a1a1a]">{profile?.declaredCrop || 'Paddy'}</p>
-          </div>
-        </GovCard>
-
-        <GovCard className="flex items-center gap-3 p-4">
-          <div className="w-10 h-10 rounded-full bg-[#fef3c7] flex items-center justify-center shrink-0">
-            <FileCheck className="w-5 h-5 text-[#d97706]" />
-          </div>
-          <div>
-            <p className="text-xs text-[#6b7280]">RTC Status</p>
-            <p className="text-lg font-bold text-[#1a1a1a]">{summary?.rtc_success ? 'Verified' : 'Pending'}</p>
-          </div>
-        </GovCard>
-
-        <GovCard className="flex items-center gap-3 p-4">
-          <div className="w-10 h-10 rounded-full bg-[#f3e8ff] flex items-center justify-center shrink-0">
-            <Navigation className="w-5 h-5 text-[#7c3aed]" />
-          </div>
-          <div>
-            <p className="text-xs text-[#6b7280]">Coordinates</p>
-            <p className="text-sm font-bold text-[#1a1a1a] font-mono">
-              {center.lat != null && center.lng != null
-                ? `${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`
-                : 'Not set'}
-            </p>
-          </div>
-        </GovCard>
-      </div>
-
-      {/* Main Content: Analysis + Map */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* Left: Satellite Analysis & Land Details */}
-        <div className="xl:col-span-5 space-y-6">
-          {/* Farm Health Score */}
-          <GovCard className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-[#1a1a1a] flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-[#1a6b3c]" /> Farm Health Score
-              </h3>
-              {satLoading && <Loader2 className="w-4 h-4 animate-spin text-blue-500" />}
-            </div>
-
-            {ndviVal != null ? (
-              <div className="flex items-center gap-4">
-                <div className="relative w-24 h-24 shrink-0">
-                  <svg className="w-24 h-24 -rotate-90" viewBox="0 0 36 36">
-                    <path className="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
-                    <path
-                      className="transition-all duration-1000"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke={ndviColor(ndviVal)}
-                      strokeWidth="3"
-                      strokeDasharray={`${Math.min(ndviVal * 100, 100)}, 100`}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-lg font-bold" style={{ color: ndviColor(ndviVal) }}>{ndviVal.toFixed(2)}</span>
-                    <span className="text-[10px] text-[#6b7280]">NDVI</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-bold" style={{ color: ndviColor(ndviVal) }}>
-                    {ndviLabel(ndviVal)}
-                  </p>
-                  <p className="text-xs text-[#6b7280] mt-1">
-                    {ndviVal >= 0.6 ? 'Crop canopy is dense and healthy.' :
-                     ndviVal >= 0.4 ? 'Moderate vegetation cover. Monitor closely.' :
-                     'Low vegetation. Immediate attention needed.'}
-                  </p>
-                  <div className="mt-2 flex items-center gap-1 text-[10px] text-[#9ca3af]">
-                    <Calendar className="w-3 h-3" />
-                    Last scan: {satData?.ndvi?.scan_date || '—'}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-[#6b7280]">No satellite data available yet.</div>
-            )}
-          </GovCard>
-
-          {/* Satellite Metrics Grid */}
-          <GovCard className="p-5">
-            <h3 className="text-sm font-bold text-[#1a1a1a] mb-4 flex items-center gap-2">
-              <Satellite className="w-4 h-4 text-blue-600" /> Satellite Analysis
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              {/* NDVI */}
-              <div className="p-3 rounded-xl border" style={{ borderColor: ndviVal != null ? ndviColor(ndviVal) + '30' : '#e5e7eb', background: ndviVal != null ? ndviColor(ndviVal) + '10' : '#f9fafb' }}>
-                <div className="flex items-center gap-2 mb-1">
-                  <Leaf className="w-4 h-4" style={{ color: ndviVal != null ? ndviColor(ndviVal) : '#9ca3af' }} />
-                  <span className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wide">NDVI</span>
-                </div>
-                <p className="text-xl font-bold" style={{ color: ndviVal != null ? ndviColor(ndviVal) : '#1a1a1a' }}>
-                  {ndviVal != null ? ndviVal.toFixed(2) : '—'}
-                </p>
-                <p className="text-[10px] text-[#6b7280]">{satData?.ndvi?.health_label || 'No data'}</p>
-              </div>
-
-              {/* NDWI */}
-              <div className="p-3 rounded-xl border border-blue-100 bg-blue-50/50">
-                <div className="flex items-center gap-2 mb-1">
-                  <Droplets className="w-4 h-4 text-blue-500" />
-                  <span className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wide">Soil Moisture</span>
-                </div>
-                <p className="text-xl font-bold text-blue-700">
-                  {ndwiVal != null ? ndwiVal.toFixed(2) : '—'}
-                </p>
-                <p className="text-[10px] text-[#6b7280]">{satData?.ndwi?.moisture_status || satData?.ndwi?.label || 'Sentinel-2 NDWI'}</p>
-              </div>
-
-              {/* Flood */}
-              <div className="p-3 rounded-xl border border-amber-100 bg-amber-50/50">
-                <div className="flex items-center gap-2 mb-1">
-                  <Waves className="w-4 h-4 text-amber-500" />
-                  <span className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wide">Flood Risk</span>
-                </div>
-                <p className="text-xl font-bold text-amber-700">
-                  {satData?.sar_flood ? (satData.sar_flood.flood_detected ? 'High' : 'Low') : '—'}
-                </p>
-                <p className="text-[10px] text-[#6b7280]">
-                  {satData?.sar_flood ? (satData.sar_flood.flood_detected ? `Area: ${satData.sar_flood.flood_area_ha ?? '--'} ha` : 'No flooding') : 'Sentinel-1 SAR'}
-                </p>
-              </div>
-
-              {/* Fire */}
-              <div className="p-3 rounded-xl border border-red-100 bg-red-50/50">
-                <div className="flex items-center gap-2 mb-1">
-                  <Flame className="w-4 h-4 text-red-500" />
-                  <span className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-wide">Fire Alert</span>
-                </div>
-                <p className="text-xl font-bold text-red-700">
-                  {satData?.fire ? (satData.fire.detected ? `${satData.fire.hotspot_count}` : 'None') : '—'}
-                </p>
-                <p className="text-[10px] text-[#6b7280]">
-                  {satData?.fire ? (satData.fire.detected ? `Closest: ${satData.fire.closest_distance_km} km` : 'No hotspots') : 'VIIRS/Sentinel-3'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2">
-                <ThermometerSun className="w-4 h-4 text-orange-500 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-[#6b7280] block">Image Date</span>
-                  <span className="text-xs font-medium">{satData?.ndvi?.scan_date || '—'}</span>
-                </div>
-              </div>
-              <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2">
-                <CloudRain className="w-4 h-4 text-blue-500 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-[#6b7280] block">Cloud Cover</span>
-                  <span className="text-xs font-medium">{satData?.ndvi?.cloud_cover_pct != null ? `${satData.ndvi.cloud_cover_pct}%` : '—'}</span>
-                </div>
-              </div>
-            </div>
-          </GovCard>
-
-          {/* Recommendations */}
-          <GovCard className="p-5">
-            <h3 className="text-sm font-bold text-[#1a1a1a] mb-3 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#1a6b3c]" /> Farm Recommendations
-            </h3>
-            <div className="space-y-2">
-              {recommendations.map((rec, i) => (
-                <div key={i} className="flex items-start gap-2 p-2.5 bg-[#f0fdf4] rounded-lg border border-green-100">
-                  <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
-                  <p className="text-xs text-[#1a2e1a] leading-relaxed">{rec}</p>
-                </div>
-              ))}
-            </div>
-          </GovCard>
-
-          {/* Land Details */}
-          <GovCard className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-[#1a1a1a] flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-[#1a6b3c]" /> Land Details
-              </h3>
-              {summary?.rtc_source === 'surepass' && (
-                <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold uppercase">Official RTC</span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-              <div className="bg-[#f9fafb] p-3 rounded-lg">
-                <p className="text-[#6b7280] text-[10px] uppercase tracking-wide font-semibold">Survey Number</p>
-                <input
-                  type="text"
-                  value={surveyNumber}
-                  onChange={e => setSurveyNumber(e.target.value)}
-                  className="font-mono font-semibold bg-transparent border-none p-0 focus:ring-0 w-full text-sm mt-1"
-                />
-              </div>
-              <div className="bg-[#f9fafb] p-3 rounded-lg">
-                <p className="text-[#6b7280] text-[10px] uppercase tracking-wide font-semibold">Hissa Number</p>
-                <input
-                  type="text"
-                  value={hissaNumber}
-                  onChange={e => setHissaNumber(e.target.value)}
-                  className="font-mono font-semibold bg-transparent border-none p-0 focus:ring-0 w-full text-sm mt-1"
-                />
-              </div>
-            </div>
-
-            <GovButton variant="primary" className="w-full" onClick={handleFetchRTC} disabled={fetching}>
-              {fetching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
-              {fetching ? 'Fetching from KSRSAC...' : 'Fetch Land Record'}
-            </GovButton>
-
-            {fetchError && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                <span>{fetchError}</span>
-              </div>
-            )}
-
-            {summary && (
-              <div className="mt-4 pt-4 border-t space-y-2.5">
-                {[
-                  { label: 'Owner Name', value: summary.owner_name || 'N/A' },
-                  { label: 'Village', value: summary.village },
-                  { label: 'Taluk / Hobli', value: `${summary.taluk} / ${summary.hobli || '—'}` },
-                  { label: 'District', value: summary.district },
-                  { label: 'Land Type', value: summary.land_type || 'Agricultural' },
-                  { label: 'KGIS Verified', value: summary.kgis_verified ? 'Yes' : 'No' },
-                ].map((item, i) => (
-                  <div key={i} className="flex justify-between items-center text-sm">
-                    <span className="text-[#6b7280] text-xs">{item.label}</span>
-                    <span className="font-medium text-[#1a1a1a]">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </GovCard>
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /><span>{error}</span>
         </div>
-
-        {/* Right: Satellite Map */}
-        <div className="xl:col-span-7">
-          <GovCard className="h-full flex flex-col p-0 overflow-hidden">
-            {/* Map Header */}
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <h3 className="text-base font-bold text-[#1a1a1a] flex items-center gap-2">
-                  <Crosshair className="w-5 h-5 text-[#1a6b3c]" /> Farm Satellite View
-                </h3>
-                <p className="text-[11px] text-[#6b7280] mt-0.5">
-                  {center.lat != null && center.lng != null
-                    ? `${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}`
-                    : 'Coordinates not available'}
-                  {polygonData?.area_ha_computed && center.lat != null && <span> · {polygonData.area_ha_computed.toFixed(2)} ha</span>}
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {hasRealPolygon && (
-                  <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-bold uppercase">Exact Boundary</span>
-                )}
-                {/* Layer Toggle */}
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                  {[
-                    { key: 'satellite' as const, label: 'Sat', icon: Satellite },
-                    { key: 'rgb' as const, label: 'RGB', icon: Eye },
-                    { key: 'ndvi' as const, label: 'NDVI', icon: Leaf },
-                    { key: 'hybrid' as const, label: 'Hybrid', icon: MapPin },
-                  ].map(layer => (
-                    <button
-                      key={layer.key}
-                      onClick={() => setActiveMapLayer(layer.key)}
-                      className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-md transition-colors ${
-                        activeMapLayer === layer.key ? 'bg-white text-[#1a6b3c] shadow-sm' : 'text-gray-400 hover:text-gray-600'
-                      }`}
-                      title={layer.label}
-                    >
-                      <layer.icon className="w-3 h-3" />
-                      {layer.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Map */}
-            <div className="flex-1 min-h-[480px] bg-gray-100 relative">
-              {hasCoords ? (
-                <MapContainer
-                  center={[center.lat, center.lng]}
-                  zoom={16}
-                  scrollWheelZoom={true}
-                  style={{ height: '100%', width: '100%' }}
-                >
-                  <LayerController activeLayer={activeMapLayer} rgbTileUrl={rgbTileUrl} ndviTileUrl={ndviTileUrl} />
-
-                  {/* Base layer */}
-                  {activeMapLayer === 'satellite' && (
-                    <TileLayer
-                      attribution='&copy; Esri · Sentinel-2'
-                      url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                    />
-                  )}
-                  {activeMapLayer === 'hybrid' && (
-                    <>
-                      <TileLayer
-                        attribution='&copy; Esri'
-                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                      />
-                      <TileLayer
-                        attribution='&copy; OpenStreetMap'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        opacity={0.3}
-                      />
-                    </>
-                  )}
-                  {(activeMapLayer === 'rgb' || activeMapLayer === 'ndvi') && (
-                    <TileLayer
-                      attribution='&copy; OpenStreetMap'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                  )}
-
-                  {/* GEE RGB overlay */}
-                  {activeMapLayer === 'rgb' && rgbTileUrl && (
-                    <TileLayer
-                      attribution="Sentinel-2 SR · GEE"
-                      url={rgbTileUrl}
-                      opacity={0.95}
-                    />
-                  )}
-
-                  {/* GEE NDVI overlay */}
-                  {activeMapLayer === 'ndvi' && ndviTileUrl && (
-                    <TileLayer
-                      attribution="Sentinel-2 NDVI · GEE"
-                      url={ndviTileUrl}
-                      opacity={0.9}
-                    />
-                  )}
-
-                  {/* Hybrid NDVI overlay on satellite */}
-                  {activeMapLayer === 'hybrid' && ndviTileUrl && (
-                    <TileLayer
-                      attribution="Sentinel-2 NDVI · GEE"
-                      url={ndviTileUrl}
-                      opacity={0.5}
-                    />
-                  )}
-
-                  {/* Farm boundary */}
-                  {hasRealPolygon ? (
-                    polygonData.polygons.map((coords: any, i: number) => (
-                      <Polygon
-                        key={i}
-                        positions={coords}
-                        pathOptions={{
-                          color: '#ffffff',
-                          fillColor: '#1a6b3c',
-                          fillOpacity: 0.25,
-                          weight: 3,
-                          dashArray: '5, 5',
-                        }}
-                      >
-                        <Popup>
-                          <div className="text-sm font-bold">Survey No: {summary!.survey_number}</div>
-                          <div className="text-xs text-[#6b7280]">Area: {polygonData.area_ha_computed.toFixed(2)} ha</div>
-                        </Popup>
-                      </Polygon>
-                    ))
-                  ) : (
-                    <Circle
-                      center={[center.lat, center.lng]}
-                      radius={150}
-                      pathOptions={{
-                        color: '#1a6b3c',
-                        fillColor: '#1a6b3c',
-                        fillOpacity: 0.15,
-                        weight: 2,
-                        dashArray: '5, 5',
-                      }}
-                    />
-                  )}
-
-                  {/* Center marker */}
-                  <Marker position={[center.lat, center.lng]}>
-                    <Popup>
-                      <div className="text-sm font-semibold">{profile?.fullName || 'Farm Location'}</div>
-                      <div className="text-xs text-[#6b7280]">
-                        Lat: {center.lat.toFixed(5)}<br />
-                        Lng: {center.lng.toFixed(5)}
-                      </div>
-                    </Popup>
-                  </Marker>
-                </MapContainer>
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-8 text-center">
-                  <Satellite className="w-16 h-16 mb-3 opacity-20" />
-                  <p className="text-sm font-medium">No coordinates available</p>
-                  <p className="text-xs mt-1 max-w-xs">
-                    Your profile does not have GPS coordinates. Please update your profile or re-register via the Land Verification Portal to enable satellite mapping.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Map Footer */}
-            <div className="p-3 border-t border-gray-100 flex items-center justify-between text-[10px] text-[#9ca3af]">
-              <div className="flex items-center gap-2">
-                <Satellite className="w-3 h-3" />
-                <span>Sentinel-2 SR Harmonized · Google Earth Engine · 10m resolution</span>
-              </div>
-              <div className="flex items-center gap-3">
-                {hasRealPolygon
-                  ? <span className="text-blue-600 font-medium">✓ Exact boundary from KGIS</span>
-                  : hasCoords
-                    ? <span>📍 Approximate location</span>
-                    : <span className="text-red-500">No map data</span>
-                }
-              </div>
-            </div>
-          </GovCard>
-        </div>
-      </div>
-
-      {/* 12-Parameter Grid from Shared Schema */}
-      {profile?.landData && (
-        <GovCard className="p-5">
-          <h3 className="text-base font-bold text-[#1a1a1a] mb-4 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-[#1a6b3c]" /> Complete Land & Satellite Parameters
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
-            <div className="p-3 bg-[#f0fdf4] rounded-lg border border-green-100">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Survey No</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.surveyNo || '—'}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Village</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.village || '—'}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Taluk</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.taluk || '—'}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">District</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.district || '—'}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">State</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.state || '—'}</p>
-            </div>
-            <div className="p-3 bg-[#f0fdf4] rounded-lg border border-green-100">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Land Area</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.area ? `${(profile.landData.area * 2.47105).toFixed(2)} ac` : '—'}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Land Use</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.landUse || '—'}</p>
-            </div>
-            <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">RTC Status</p>
-              <p className="font-bold text-green-700">{profile.landData.rtcStatus || '—'}</p>
-            </div>
-            <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">NDVI</p>
-              <p className="font-bold text-green-700">{profile.landData.ndvi?.toFixed(2) || '—'}</p>
-            </div>
-            <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Crop Health</p>
-              <p className="font-bold text-green-700">{profile.landData.cropHealth || '—'}</p>
-            </div>
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Crop Type</p>
-              <p className="font-bold text-[#1a1a1a]">{profile.landData.cropType || '—'}</p>
-            </div>
-            <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-              <p className="text-[10px] text-[#6b7280] uppercase tracking-wide font-semibold">Soil Moisture</p>
-              <p className="font-bold text-blue-700">{profile.landData.soilMoisture ? `${profile.landData.soilMoisture}%` : '—'}</p>
-            </div>
-          </div>
-        </GovCard>
       )}
 
-      {/* Bottom: Encumbrance Alert */}
-      {landRecord?.rtc?.encumbrance && (
-        <GovCard className="border-amber-200 bg-amber-50 p-4">
-          <div className="flex items-center gap-3 text-amber-800">
-            <AlertTriangle className="w-6 h-6" />
-            <div>
-              <p className="font-semibold text-sm">Encumbrance Detected</p>
-              <p className="text-xs text-amber-700 mt-0.5">
-                This land has active encumbrances or mutations pending. This may affect insurance eligibility.
-              </p>
-            </div>
-          </div>
-        </GovCard>
+      {/* Empty state */}
+      {holdings.length === 0 && !loading && (
+        <EmptyState
+          icon={MapPin}
+          title="No land holdings added yet"
+          message="Add your first land holding to verify it with satellite data and get crop health analysis."
+          action={{ label: 'Add Land Holding', onClick: () => setShowAddModal(true) }}
+        />
+      )}
+
+      {/* Land Holdings */}
+      <div className="space-y-6">
+        {holdings.map((holding) => (
+          <LandProfileCard
+            key={holding.id}
+            holding={holding}
+            verification={verificationData[holding.id] || null}
+            onVerify={() => handleVerify(holding.id)}
+            onDownload={() => handleDownload(holding.id)}
+            onDelete={() => handleDelete(holding.id)}
+            verifying={verificationLoading === holding.id}
+          />
+        ))}
+      </div>
+
+      {/* Add Another button when holdings exist */}
+      {holdings.length > 0 && (
+        <div className="flex justify-center">
+          <GovButton variant="outline" onClick={() => setShowAddModal(true)}>
+            <Plus className="w-4 h-4 mr-1" /> Add Another Land Holding
+          </GovButton>
+        </div>
+      )}
+
+      {/* Add Land Holding Modal */}
+      {showAddModal && (
+        <AddLandHoldingModal
+          farmerId={farmerId}
+          onClose={() => setShowAddModal(false)}
+          onAdded={() => refetch()}
+        />
       )}
     </div>
   );

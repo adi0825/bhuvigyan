@@ -1,4 +1,4 @@
-import { Leaf, Droplets, Waves, Flame, RefreshCw, Satellite } from 'lucide-react';
+import { Leaf, Droplets, Waves, Flame, RefreshCw, Satellite, AlertTriangle, ShieldAlert } from 'lucide-react';
 import GovCard from '../ui/GovCard';
 import type { SatelliteData } from '../../api/satellite';
 
@@ -19,6 +19,12 @@ function getNdviBg(value: number): string {
   if (value < 0.35) return '#fef2f2';
   if (value < 0.5) return '#fffbeb';
   return '#f0fdf4';
+}
+
+function confidenceBadge(conf: number): { text: string; color: string; bg: string } {
+  if (conf >= 0.75) return { text: 'High confidence', color: '#15803d', bg: '#dcfce7' };
+  if (conf >= 0.5) return { text: 'Medium confidence', color: '#b45309', bg: '#fef3c7' };
+  return { text: 'Low confidence', color: '#b91c1c', bg: '#fee2e2' };
 }
 
 export default function BhumiAICard({ data, loading, isCached, onRefresh }: Props) {
@@ -50,11 +56,23 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
 
   const ndvi = (data.ndvi || {}) as any;
   const ndwi = (data.ndwi || {}) as any;
-  const flood = (data.sar_flood || {}) as any;
+  const flood = (data.floodRisk || data.sar_flood || {}) as any;
   const fire = (data.fire || {}) as any;
   const ndviValue = ndvi.ndvi ?? 0;
   const ndviColor = getNdviColor(ndviValue);
   const ndviBg = getNdviBg(ndviValue);
+
+  // Conservative labels: never hard "Yes/No" without confidence context
+  const floodDetected = flood.flood_detected ?? false;
+  const floodConfidence = typeof flood.confidence === 'number' ? flood.confidence : 0;
+  const floodLabel = floodDetected
+    ? (floodConfidence < 0.5 ? 'Possible flood signal' : 'Flood risk detected')
+    : 'No strong flood evidence';
+
+  const overallConf = data.analysisConfidence ?? 0;
+  const confBadge = confidenceBadge(overallConf);
+  const warnings = data.qualityWarnings || [];
+  const reviewNeeded = data.manualReviewRequired ?? false;
 
   const items = [
     {
@@ -76,10 +94,10 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
     {
       icon: Waves,
       label: 'Flood Risk',
-      value: flood.flood_detected ? 'Yes' : 'No',
-      sub: typeof flood.confidence === 'number' ? `${Math.round(flood.confidence * 100)}% confidence` : 'No data',
-      color: flood.flood_detected ? '#ef4444' : '#22c55e',
-      bg: flood.flood_detected ? '#fef2f2' : '#f0fdf4',
+      value: floodLabel,
+      sub: typeof flood.confidence === 'number' ? `${Math.round(flood.confidence * 100)}% confidence` : (flood.reason || 'No data'),
+      color: floodDetected ? '#ef4444' : '#22c55e',
+      bg: floodDetected ? '#fef2f2' : '#f0fdf4',
     },
     {
       icon: Flame,
@@ -93,7 +111,7 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
 
   return (
     <GovCard className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h3 className="text-lg font-bold text-[#1a1a1a]">Bhumi AI — Live Satellite</h3>
           <p className="text-xs text-[#6b7280]">
@@ -101,16 +119,46 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
             {isCached && <span className="ml-1 text-[#f59e0b]">(cached)</span>}
           </p>
         </div>
-        {onRefresh && (
-          <button
-            onClick={onRefresh}
-            className="p-2 rounded-lg hover:bg-[#f3f4f6] transition-colors"
-            title="Refresh satellite data"
+        <div className="flex items-center gap-2">
+          <span
+            className="text-[10px] font-semibold px-2 py-1 rounded-full"
+            style={{ color: confBadge.color, backgroundColor: confBadge.bg }}
           >
-            <RefreshCw className="w-4 h-4 text-[#6b7280]" />
-          </button>
-        )}
+            {confBadge.text}
+          </span>
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              className="p-2 rounded-lg hover:bg-[#f3f4f6] transition-colors"
+              title="Refresh satellite data"
+            >
+              <RefreshCw className="w-4 h-4 text-[#6b7280]" />
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Review banner */}
+      {reviewNeeded && (
+        <div className="flex items-start gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800">
+            <b>Needs manual review</b> — satellite signals do not fully agree. Please verify before acting.
+          </p>
+        </div>
+      )}
+
+      {/* Quality warnings */}
+      {warnings.length > 0 && (
+        <div className="space-y-1">
+          {warnings.map((w, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-[11px] text-amber-700">
+              <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+              <span>{w}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {items.map((item) => (
@@ -123,10 +171,10 @@ export default function BhumiAICard({ data, loading, isCached, onRefresh }: Prop
               <item.icon className="w-4 h-4" style={{ color: item.color }} />
               <span className="text-[11px] font-semibold text-[#6b7280] uppercase">{item.label}</span>
             </div>
-            <p className="text-xl font-bold" style={{ color: item.color }}>
+            <p className="text-lg font-bold leading-tight" style={{ color: item.color }}>
               {item.value}
             </p>
-            <p className="text-[11px] text-[#6b7280]">{item.sub}</p>
+            <p className="text-[11px] text-[#6b7280] mt-1">{item.sub}</p>
           </div>
         ))}
       </div>

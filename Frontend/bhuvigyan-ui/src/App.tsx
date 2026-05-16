@@ -28,6 +28,7 @@ import ClaimDetail from './pages/farmer/ClaimDetail';
 import FarmerNotifications from './pages/farmer/Notifications';
 import MyApplication from './pages/farmer/MyApplication';
 import MyDocuments from './pages/farmer/MyDocuments';
+import FarmerInsurance from './pages/farmer/FarmerInsurance';
 import LandPortal from './pages/LandPortal';
 
 import AdminLayout from './pages/admin/AdminLayout';
@@ -79,6 +80,7 @@ import InsurerApproved from './pages/insurer/InsurerApproved';
 import InsurerRejected from './pages/insurer/InsurerRejected';
 import InsurerHeatmap from './pages/insurer/InsurerHeatmap';
 import InsurerAnalytics from './pages/insurer/InsurerAnalytics';
+import InsurerPolicyApplications from './pages/insurer/InsurerPolicyApplications';
 import StateDashboard from './pages/state/StateDashboard';
 import StateLayout from './pages/state/StateLayout';
 import ClaimQueue from './pages/state/ClaimQueue';
@@ -132,6 +134,7 @@ export default function App() {
             <Route path="land" element={<MyLand />} />
             <Route path="application" element={<MyApplication />} />
             <Route path="documents" element={<MyDocuments />} />
+            <Route path="insurance" element={<FarmerInsurance />} />
             <Route path="claims" element={<FarmerClaims />} />
             <Route path="claims/new" element={<CreateClaim />} />
             <Route path="claims/:claimId" element={<ClaimDetail />} />
@@ -228,6 +231,7 @@ export default function App() {
             }
           >
             <Route path="dashboard" element={<InsurerDashboard />} />
+            <Route path="policy-applications" element={<InsurerPolicyApplications />} />
             <Route path="fraud-analytics" element={<FraudAnalytics />} />
             <Route path="claims" element={<InsurerClaimsQueue />} />
             <Route path="claim/:claimId" element={<InsurerClaimReview />} />

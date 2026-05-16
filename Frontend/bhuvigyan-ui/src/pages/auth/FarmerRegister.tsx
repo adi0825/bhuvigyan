@@ -78,15 +78,29 @@ export default function FarmerRegister() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
   }, [form]);
 
-  // Poll for land data from portal
+  // Poll for land data from portal + listen for postMessage
   useEffect(() => {
     if (step === 2) {
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'LAND_DATA_READY' && event.data?.payload) {
+          const payload = event.data.payload;
+          if (payload.coordinatesVerified === true) {
+            setLandData(payload);
+            localStorage.setItem(LAND_DATA_KEY, JSON.stringify(payload));
+            if (landPollRef.current) {
+              clearInterval(landPollRef.current);
+              landPollRef.current = null;
+            }
+          }
+        }
+      };
+      window.addEventListener('message', handleMessage);
+
       const check = () => {
         const raw = localStorage.getItem(LAND_DATA_KEY);
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
-            // Only stop polling and set landData if coordinatesVerified === true
             if (parsed.coordinatesVerified === true) {
               setLandData(parsed);
               if (landPollRef.current) {
@@ -99,10 +113,12 @@ export default function FarmerRegister() {
       };
       check();
       landPollRef.current = setInterval(check, 1000);
+
+      return () => {
+        window.removeEventListener('message', handleMessage);
+        if (landPollRef.current) clearInterval(landPollRef.current);
+      };
     }
-    return () => {
-      if (landPollRef.current) clearInterval(landPollRef.current);
-    };
   }, [step]);
 
   const update = (k: string, v: string) => {
@@ -340,7 +356,6 @@ export default function FarmerRegister() {
                         <h3 className="text-sm font-bold text-[#1a1a1a] uppercase tracking-wide">Verified Land Record Summary</h3>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div><span className="text-gray-500">Survey No:</span> <span className="font-medium">{landData.surveyNo}</span></div>
-                          <div><span className="text-gray-500">Village:</span> <span className="font-medium">{landData.village}</span></div>
                           <div><span className="text-gray-500">Taluk:</span> <span className="font-medium">{landData.taluk}</span></div>
                           <div><span className="text-gray-500">District:</span> <span className="font-medium">{landData.district}</span></div>
                           <div><span className="text-gray-500">State:</span> <span className="font-medium">{landData.state}</span></div>
