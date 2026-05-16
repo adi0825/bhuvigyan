@@ -119,7 +119,7 @@ async def farmer_register(body: FarmerRegisterRequest, db: AsyncSession = Depend
     state_code_final = state_code_map.get(state_code, "KA") if state_code else "KA"
     udlrm = await generate(db, state_code_final)
     udlrn_record = UdlrnMaster(
-        udlrn=udlrn, farmer_id=farmer.id,
+        udlrn=udlrm, farmer_id=farmer.id,
         land_area_ha=body.land_area or 2.5,
         declared_crop=body.crop_name or "PADDY",
         carbon_score=0,
@@ -189,8 +189,8 @@ async def farmer_register(body: FarmerRegisterRequest, db: AsyncSession = Depend
         "success": True,
         "data": {
             "farmerId": str(farmer.id),
-            "udlrn": udlrn,
-            "udlrmNumber": udlrn,  # Alias for frontend consistency
+            "udlrn": udlrm,
+            "udlrmNumber": udlrm,  # Alias for frontend consistency
             "devOtp": otp,
             "registrationStatus": registration_status,
             "kgisVerified": kgis_verified,

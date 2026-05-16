@@ -18,7 +18,9 @@ from app.routers import (
     inspector, admin_inspector, inspector_auth,
     payments, carbon_credits, farm_registrations,
     satellite, land, analysis,
-    csc_portal, insurer_portal
+    csc_portal, insurer_portal,
+    farmer_insurance, insurer_policies,
+    my_land
 )
 
 @asynccontextmanager
@@ -168,6 +170,9 @@ app.include_router(land.router, prefix="/api/v1", tags=["Land"])
 app.include_router(analysis.router, prefix="/api/v1", tags=["Unified Analysis"])
 app.include_router(csc_portal.router, prefix="/api/v1/csc", tags=["CSC Portal"])
 app.include_router(insurer_portal.router, prefix="/api/v1/insurer", tags=["Insurer Portal"])
+app.include_router(farmer_insurance.router, prefix="/api/v1/farmer/insurance", tags=["Farmer Insurance"])
+app.include_router(insurer_policies.router, prefix="/api/v1/insurer", tags=["Insurer Policies"])
+app.include_router(my_land.router, prefix="/api/v1/my-land", tags=["my-land"])
 
 @app.get("/health")
 async def health():
@@ -214,17 +219,16 @@ async def health():
         status["services"]["kgis"] = {"status": "DOWN", "detail": str(e)}
         status["status"] = "DEGRADED"
 
-    # 4. Bhoomi (lightweight probe)
+    # 4. Bhoomi (lightweight probe — Karnataka-specific external, non-critical)
     try:
         res = await land_service._try_all_bases("getAllDistricts", headers=land_service.HEADERS_BHOOMI, bases=land_service.BHOOMI_BASES, timeout=8)
         if res["success"]:
             status["services"]["bhoomi"] = {"status": "UP", "detail": f"Reachable via {res.get('url', 'unknown')}"}
         else:
-            status["services"]["bhoomi"] = {"status": "DEGRADED", "detail": res.get("error", "No response")}
-            status["status"] = "DEGRADED"
+            status["services"]["bhoomi"] = {"status": "DEGRADED", "detail": res.get("error", "No response (KA-specific, non-critical)")}
+            # Bhoomi is Karnataka-only — don't downgrade overall health
     except Exception as e:
-        status["services"]["bhoomi"] = {"status": "DOWN", "detail": str(e)}
-        status["status"] = "DEGRADED"
+        status["services"]["bhoomi"] = {"status": "DEGRADED", "detail": f"Unreachable (KA-specific, non-critical): {str(e)[:80]}"}
 
     # 5. GEE
     if GEE_INITIALIZED:

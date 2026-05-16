@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.api.routes import land, ndvi, fraud, health
+from app.api.routes import land, ndvi, fraud, health, my_land
 
 configure_logging()
 
@@ -33,6 +33,7 @@ app.include_router(land.router, prefix="/api/v1/land", tags=["land"])
 app.include_router(ndvi.router, prefix="/api/v1/ndvi", tags=["ndvi"])
 app.include_router(fraud.router, prefix="/api/v1/fraud", tags=["fraud"])
 app.include_router(health.router, prefix="/api/v1/health", tags=["health"])
+app.include_router(my_land.router, prefix="/api/v1/my-land", tags=["my-land"])
 
 
 @app.get("/")
