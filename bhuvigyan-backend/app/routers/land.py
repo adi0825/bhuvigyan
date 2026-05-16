@@ -431,30 +431,6 @@ async def satellite_analyze(request: dict):
             "ndvi": analysis.get("ndvi_tile", {}).get("tile_url", ""),
         }
 
-        # Override for Maharashtra sugarcane demo coordinates — force healthy green data
-        if abs(lat - 16.924381) < 0.001 and abs(lng - 74.575982) < 0.001:
-            land_data["ndvi"] = 0.78
-            land_data["cropHealth"] = "Healthy"
-            land_data["cropType"] = "Sugarcane"
-            land_data["cropCoverage"] = 92
-            land_data["soilMoisture"] = 68
-            land_data["fraudScore"] = 8
-            land_data["preSowingNDVI"] = 0.62
-            land_data["coordinatesVerified"] = True
-            land_data["sarStatus"] = "Active — No Flood"
-            land_data["landUseClassification"] = "Agricultural land confirmed"
-            # Fix NDVI history to reflect healthy sugarcane
-            land_data["ndviHistory"] = [
-                {"month": "Dec 2025", "value": 0.72},
-                {"month": "Jan 2026", "value": 0.74},
-                {"month": "Feb 2026", "value": 0.73},
-                {"month": "Mar 2026", "value": 0.75},
-                {"month": "Apr 2026", "value": 0.76},
-                {"month": "May 2026", "value": 0.78},
-            ]
-            if data_source.startswith("Mock"):
-                data_source = "Mock (Sugarcane signature — healthy)"
-
         return {
             "success": True,
             "data": land_data,
