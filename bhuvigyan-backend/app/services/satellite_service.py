@@ -121,10 +121,11 @@ except ImportError:
 from app.services.gee_init import initialize_gee, GEE_INITIALIZED, GEE_INIT_ERROR
 
 # Force GEE initialization on module load
+# IMPORTANT: use return value, not the imported GEE_INITIALIZED bool which is a stale copy
 if GEE_AVAILABLE and not GEE_INITIALIZED:
     logger.info("Initializing Google Earth Engine on module load...")
-    initialize_gee()
-    if GEE_INITIALIZED:
+    _gee_ok = initialize_gee()
+    if _gee_ok:
         logger.info("✓ Google Earth Engine initialized successfully")
     else:
         logger.warning(f"✗ Google Earth Engine initialization failed: {GEE_INIT_ERROR}")
@@ -135,13 +136,11 @@ def ensure_gee():
     if not GEE_AVAILABLE:
         logger.error("GEE not available - earthengine-api not installed")
         return False
-    if not GEE_INITIALIZED:
-        logger.info("Attempting to initialize GEE...")
-        result = initialize_gee()
-        if not result:
-            logger.error(f"GEE initialization failed: {GEE_INIT_ERROR}")
-        return result
-    return True
+    # Re-check by actually calling initialize_gee; don't trust the stale module-level import
+    result = initialize_gee()
+    if not result:
+        logger.error(f"GEE initialization failed: {GEE_INIT_ERROR}")
+    return result
 
 
 def get_ndvi_label(value: float) -> str:
@@ -220,8 +219,8 @@ class SatelliteService:
         if not GEE_AVAILABLE:
             return _generate_fallback_ndvi(lat, lng)
         try:
-            if not GEE_INITIALIZED:
-                initialize_gee()
+            if not initialize_gee():
+                return _generate_fallback_ndvi(lat, lng)
             image, region = self._get_best_s2_image(lat, lng, buffer_m)
             if image is None:
                 return _generate_fallback_ndvi(lat, lng)
@@ -298,8 +297,8 @@ class SatelliteService:
         if not GEE_AVAILABLE:
             return _generate_fallback_ndwi(lat, lng)
         try:
-            if not GEE_INITIALIZED:
-                initialize_gee()
+            if not initialize_gee():
+                return _generate_fallback_ndwi(lat, lng)
             image, region = self._get_best_s2_image(lat, lng, buffer_m)
             if image is None:
                 return _generate_fallback_ndwi(lat, lng)
@@ -335,8 +334,8 @@ class SatelliteService:
         if not GEE_AVAILABLE:
             return _generate_fallback_flood(lat, lng)
         try:
-            if not GEE_INITIALIZED:
-                initialize_gee()
+            if not initialize_gee():
+                return _generate_fallback_flood(lat, lng)
             point = ee.Geometry.Point([lng, lat])
             region = point.buffer(buffer_m)
             end = datetime.today().strftime('%Y-%m-%d')
@@ -416,8 +415,8 @@ class SatelliteService:
         if not GEE_AVAILABLE:
             return {"error": "gee_unavailable", "message": "earthengine-api not installed. Run: pip install earthengine-api"}
         try:
-            if not GEE_INITIALIZED:
-                initialize_gee()
+            if not initialize_gee():
+                return {"tile_url": "", "type": "true_color_rgb", "source": "Sentinel-2 SR Harmonized", "bands": "B4-B3-B2"}
             image, region = self._get_best_s2_image(lat, lng, buffer_m)
             if image is None:
                 return {"tile_url": "", "type": "true_color_rgb", "source": "Sentinel-2 SR Harmonized", "bands": "B4-B3-B2"}
@@ -433,8 +432,8 @@ class SatelliteService:
         if not GEE_AVAILABLE:
             return {"error": "gee_unavailable", "message": "earthengine-api not installed. Run: pip install earthengine-api"}
         try:
-            if not GEE_INITIALIZED:
-                initialize_gee()
+            if not initialize_gee():
+                return {"tile_url": "", "type": "ndvi_heatmap", "source": "Sentinel-2 SR Harmonized"}
             image, region = self._get_best_s2_image(lat, lng, buffer_m)
             if image is None:
                 return {"tile_url": "", "type": "ndvi_heatmap", "source": "Sentinel-2 SR Harmonized"}
@@ -487,8 +486,8 @@ class SatelliteService:
         # Always try GEE first - only fall back if the actual GEE call fails
         if GEE_AVAILABLE:
             try:
-                if not GEE_INITIALIZED:
-                    initialize_gee()
+                if not initialize_gee():
+                    raise RuntimeError(f"GEE not initialized: {GEE_INIT_ERROR}")
                 # Try to fetch real GEE data
                 raw = self._get_real_gee_analysis(lat, lng, buffer_m)
                 return wrap_analysis_with_confidence(raw, state=state)
@@ -515,9 +514,8 @@ class SatelliteService:
         # Ensure GEE is initialized before attempting any GEE calls
         if not GEE_AVAILABLE:
             raise RuntimeError("earthengine-api not installed. Run: pip install earthengine-api")
-        if not GEE_INITIALIZED:
-            if not initialize_gee():
-                raise RuntimeError(f"Google Earth Engine not initialized. Run: earthengine authenticate. Error: {GEE_INIT_ERROR}")
+        if not initialize_gee():
+            raise RuntimeError(f"Google Earth Engine not initialized. Run: earthengine authenticate. Error: {GEE_INIT_ERROR}")
 
         # Fetch ONE best Sentinel-2 image and reuse it for NDVI, NDWI, tiles, thumbnail
         image, region = self._get_best_s2_image(lat, lng, buffer_m=buffer_m)

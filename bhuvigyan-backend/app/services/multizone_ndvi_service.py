@@ -58,13 +58,23 @@ async def compute_multizone_ndvi(geojson_geometry: Dict, survey_number: str, mon
         count = s2.size().getInfo()
         source = "Sentinel-2 SR Harmonized"
         used_radar_fallback = False
-        if count == 0:
+        if not count or count == 0:
             used_radar_fallback = True
             source = "Sentinel-1 SAR (cloud cover too high for optical)"
             return await _radar_fallback_ndvi(region, survey_number, start, end, cache_key)
 
         best_img = s2.sort("CLOUDY_PIXEL_PERCENTAGE").first()
-        cloud_cover_pct = best_img.get("CLOUDY_PIXEL_PERCENTAGE").getInfo()
+        # Safely extract properties that may be missing
+        cloud_cover_raw = best_img.get("CLOUDY_PIXEL_PERCENTAGE")
+        cloud_cover_val = cloud_cover_raw.getInfo() if cloud_cover_raw else None
+        cloud_cover_pct = cloud_cover_val if cloud_cover_val is not None else 0
+        time_start_raw = best_img.get("system:time_start")
+        time_start_ms = time_start_raw.getInfo() if time_start_raw else None
+        if time_start_ms:
+            scan_date = datetime.datetime.fromtimestamp(time_start_ms / 1000).strftime("%Y-%m-%d")
+        else:
+            scan_date = datetime.date.today().isoformat()
+
         ndvi_img = best_img.normalizedDifference(["B8", "B4"]).rename("NDVI")
         samples = ndvi_img.sample(region=region, scale=10, numPixels=500, seed=42, geometries=True).getInfo()
         pixel_ndvis = [f["properties"]["NDVI"] for f in samples.get("features", []) if f.get("properties", {}).get("NDVI") is not None]
@@ -72,10 +82,9 @@ async def compute_multizone_ndvi(geojson_geometry: Dict, survey_number: str, mon
         if not pixel_ndvis:
             stats = ndvi_img.reduceRegion(reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(), "", True), geometry=region, scale=10, maxPixels=1e8, bestEffort=True).getInfo()
             mean_val = stats.get("NDVI_mean") or stats.get("NDVI") or 0
-            return {"zones": [{"zone_id": "A", "ndvi_mean": round(mean_val, 4), "label": _ndvi_zone_label(mean_val), "health_badge": _ndvi_health_badge(mean_val), "pixel_count": 1, "area_pct": 100.0}], "source": source, "cloud_cover_pct": round(cloud_cover_pct, 1), "scan_date": datetime.datetime.fromtimestamp(best_img.get("system:time_start").getInfo() / 1000).strftime("%Y-%m-%d"), "used_radar_fallback": False, "cached": False}
+            return {"zones": [{"zone_id": "A", "ndvi_mean": round(mean_val, 4), "label": _ndvi_zone_label(mean_val), "health_badge": _ndvi_health_badge(mean_val), "pixel_count": 1, "area_pct": 100.0}], "source": source, "cloud_cover_pct": round(cloud_cover_pct, 1), "scan_date": scan_date, "used_radar_fallback": False, "cached": False}
 
         zones = _cluster_ndvi_zones(pixel_ndvis)
-        scan_date = datetime.datetime.fromtimestamp(best_img.get("system:time_start").getInfo() / 1000).strftime("%Y-%m-%d")
         ndvi_tile = ndvi_img.getMapId({"min": -0.2, "max": 0.8, "palette": ["#d73027", "#f46d43", "#fee08b", "#d9ef8b", "#66bd63", "#1a9850"]})["tile_fetcher"].url_format
         rgb_tile = best_img.getMapId({"bands": ["B4", "B3", "B2"], "min": 0, "max": 0.3, "gamma": 1.4})["tile_fetcher"].url_format
         result = {"zones": zones, "source": source, "cloud_cover_pct": round(cloud_cover_pct, 1), "scan_date": scan_date, "used_radar_fallback": False, "ndvi_tile_url": ndvi_tile, "rgb_tile_url": rgb_tile, "total_pixels_sampled": len(pixel_ndvis), "cached": False}
@@ -155,7 +164,10 @@ async def compute_multizone_ndvi_timeseries(geojson_geometry: Dict, survey_numbe
             stats = img.reduceRegion(reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(), "", True).combine(ee.Reducer.min(), "", True).combine(ee.Reducer.max(), "", True), geometry=region, scale=10, maxPixels=1e8, bestEffort=True)
             return ee.Feature(None, {"date": img.get("date"), "ndvi_mean": stats.get("NDVI_mean"), "ndvi_std": stats.get("NDVI_stdDev"), "ndvi_min": stats.get("NDVI_min"), "ndvi_max": stats.get("NDVI_max")})
 
-        features = s2.map(reduce_region).filter(ee.Filter.notNull(["ndvi_mean"])).getInfo()["features"]
+        raw = s2.map(reduce_region).filter(ee.Filter.notNull(["ndvi_mean"])).getInfo()
+        if not raw:
+            return {"timeseries": [], "zone_lines": [], "anomalies": [], "count": 0, "period": f"{start} to {end}", "months": months, "cached": False}
+        features = raw.get("features", [])
         series = []
         for f in features:
             props = f["properties"]

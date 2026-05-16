@@ -324,7 +324,8 @@ async def satellite_analyze(request: dict):
 
     # Use real GEE satellite service
     satellite_service = SatelliteService()
-    from app.services.satellite_service import GEE_AVAILABLE, GEE_INITIALIZED, GEE_INIT_ERROR
+    from app.services.gee_init import initialize_gee, GEE_INIT_ERROR
+    from app.services.satellite_service import GEE_AVAILABLE
 
     data_source = "Mock (GEE unavailable)"
     gee_error = None
@@ -332,7 +333,7 @@ async def satellite_analyze(request: dict):
     if not GEE_AVAILABLE:
         data_source = "Mock (earthengine-api not installed)"
         gee_error = "earthengine-api library not installed. Run: pip install earthengine-api"
-    elif not GEE_INITIALIZED:
+    elif not initialize_gee():
         data_source = "Mock (GEE not initialized)"
         gee_error = f"GEE initialization failed: {GEE_INIT_ERROR}. Run: earthengine authenticate"
 

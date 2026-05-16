@@ -27,16 +27,18 @@ def initialize_gee():
 
     # Check if already initialized in this session
     try:
-        ee.data.getAssetRoots()
+        ee.Image(0).getInfo()
         GEE_INITIALIZED = True
         logger.info("GEE already initialized")
         return True
     except Exception:
         pass
 
-    # Method 1: Project-based init (explicit project — works with stored OAuth creds)
+    # Method 1: Project-based init (required by newer EE API)
     try:
         ee.Initialize(project=GEE_PROJECT_ID)
+        # Verify with a lightweight call instead of getAssetRoots (which fails if no assets exist)
+        ee.Image(0).getInfo()
         logger.info("✓ GEE initialized (project)")
         GEE_INITIALIZED = True
         GEE_INIT_ERROR = None
@@ -45,9 +47,10 @@ def initialize_gee():
         GEE_INIT_ERROR = str(e)
         logger.warning(f"GEE project init failed: {e}")
 
-    # Method 2: OAuth credentials without explicit project (fallback)
+    # Method 2: OAuth without project (legacy fallback)
     try:
         ee.Initialize()
+        ee.Image(0).getInfo()
         logger.info("✓ GEE initialized (OAuth)")
         GEE_INITIALIZED = True
         GEE_INIT_ERROR = None

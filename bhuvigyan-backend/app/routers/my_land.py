@@ -151,7 +151,7 @@ async def verify_land_with_satellite(payload: VerifyLandRequest):
         logger.error("scene_search_failed: %s", e)
         pipeline_steps.append({"step": "scene_search", "status": "warning", "message": "Scene search failed. Using GEE fallback."})
 
-    # 4. NDVI computation
+    # 4. NDVI computation (real data only — no mock fallback)
     ndvi_result = None
     ndvi_zones = []
     try:
@@ -162,29 +162,12 @@ async def verify_land_with_satellite(payload: VerifyLandRequest):
             pipeline_steps.append({"step": "ndvi_computation", "status": "completed", "message": f"Multi-zone NDVI computed ({len(ndvi_zones)} zones)", "zone_count": len(ndvi_zones)})
         else:
             err = ndvi_result.get("error", "Unknown") if ndvi_result else "No AOI"
-            pipeline_steps.append({"step": "ndvi_computation", "status": "warning", "message": err + ". Using mock greenery data."})
-            # Inject mock NDVI for sugarcane (healthy, dense vegetation)
-            ndvi_zones = _mock_sugarcane_ndvi()
-            ndvi_result = {
-                "zones": ndvi_zones,
-                "source": "Mock data (GEE unavailable — sugarcane signature)",
-                "cloud_cover_pct": 0,
-                "scan_date": datetime.datetime.utcnow().strftime("%Y-%m-%d"),
-                "used_radar_fallback": False,
-                "cached": False
-            }
+            pipeline_steps.append({"step": "ndvi_computation", "status": "failed", "message": err})
+            return {"success": False, "error": f"NDVI computation failed: {err}", "data": {"holding_id": holding["id"], "pipeline_steps": pipeline_steps}}
     except Exception as e:
         logger.error("ndvi_computation_failed: %s", e)
-        pipeline_steps.append({"step": "ndvi_computation", "status": "warning", "message": str(e) + ". Using mock greenery data."})
-        ndvi_zones = _mock_sugarcane_ndvi()
-        ndvi_result = {
-            "zones": ndvi_zones,
-            "source": "Mock data (GEE error — sugarcane signature)",
-            "cloud_cover_pct": 0,
-            "scan_date": datetime.datetime.utcnow().strftime("%Y-%m-%d"),
-            "used_radar_fallback": False,
-            "cached": False
-        }
+        pipeline_steps.append({"step": "ndvi_computation", "status": "failed", "message": str(e)})
+        return {"success": False, "error": f"NDVI computation failed: {str(e)}", "data": {"holding_id": holding["id"], "pipeline_steps": pipeline_steps}}
 
     # 5. Soil moisture
     soil_moisture = None
@@ -379,30 +362,10 @@ def _build_aoi(holding: Dict) -> Optional[Dict]:
     }
 
 
-def _mock_sugarcane_ndvi() -> List[Dict]:
-    """Return realistic mock NDVI zones for healthy sugarcane.
-    Sugarcane typically shows NDVI 0.65-0.85 (dense, year-round green)."""
-    return [
-        {"zone_id": "A", "ndvi_mean": 0.78, "label": "Dense healthy crop", "health_badge": "Healthy", "pixel_count": 420, "area_pct": 85.0},
-        {"zone_id": "B", "ndvi_mean": 0.52, "label": "Active growing crop", "health_badge": "Stressed", "pixel_count": 60, "area_pct": 12.0},
-        {"zone_id": "C", "ndvi_mean": 0.15, "label": "Bare soil, no crop", "health_badge": "No crop detected", "pixel_count": 15, "area_pct": 3.0},
-    ]
-
-
-def _mock_generic_ndvi() -> List[Dict]:
-    """Generic healthy crop mock zones."""
-    return [
-        {"zone_id": "A", "ndvi_mean": 0.72, "label": "Dense healthy crop", "health_badge": "Healthy", "pixel_count": 380, "area_pct": 80.0},
-        {"zone_id": "B", "ndvi_mean": 0.45, "label": "Active growing crop", "health_badge": "Stressed", "pixel_count": 80, "area_pct": 16.0},
-        {"zone_id": "C", "ndvi_mean": 0.08, "label": "Bare soil, no crop", "health_badge": "No crop detected", "pixel_count": 20, "area_pct": 4.0},
-    ]
-
-
 def _determine_verification_status(crop_mix, anomalies, ndvi_result):
     if not ndvi_result:
         return "Needs review"
-    # Allow mock data to pass through
-    if ndvi_result.get("error") and "Mock" not in str(ndvi_result.get("source", "")):
+    if ndvi_result.get("error"):
         return "Needs review"
     if not crop_mix:
         return "Needs review"
