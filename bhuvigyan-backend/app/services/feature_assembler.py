@@ -283,7 +283,7 @@ async def assemble_features(claim_id: str, db: AsyncSession) -> Dict[str, Any]:
         "claim_amount_variance": round(claim_variance, 4),
 
         # C. Geospatial (17-24)
-        "gps_distance_from_parcel": 0.0,  # needs UDLRN centroid lookup
+        "gps_distance_from_holding": 0.0,  # needs UDLRN centroid lookup
         "geo_cluster_count_90d": geo_cluster_count,
         "geo_cluster_different_farmers": geo_cluster_diff_farmers,
         "same_gps_3plus_claims": int(same_gps_3plus),

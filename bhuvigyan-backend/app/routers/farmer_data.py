@@ -55,7 +55,7 @@ async def get_profile(db: AsyncSession = Depends(get_db), user = Depends(get_cur
         "declaredCrop": udlrn.declared_crop if udlrn else "PADDY",
         "surveyNumber": udlrn.survey_number if udlrn else None,
         "notificationPrefs": {"inApp": True, "sms": True, "whatsapp": True},
-        "parcels": [{"udlrn": udlrn.udlrn, "areaHa": float(udlrn.land_area_ha), "landUse": "Agricultural", "crop": udlrn.declared_crop}] if udlrn else [],
+        "landHoldings": [{"udlrn": udlrn.udlrn, "areaHa": float(udlrn.land_area_ha), "landUse": "Agricultural", "crop": udlrn.declared_crop}] if udlrn else [],
     }}
 
 @router.get("/land")
@@ -342,6 +342,11 @@ async def file_claim(
     land = udlrn_result.scalar_one_or_none()
     if not land or str(land.farmer_id) != user["userId"]:
         return {"success": False, "error": {"message": "Land record not found or does not belong to you"}}
+
+    from app.models.active_policy import ActivePolicy
+    active_policy = await db.execute(select(ActivePolicy).where(ActivePolicy.udlrn == body.udlrn, ActivePolicy.policy_status == "ACTIVE", ActivePolicy.end_date >= datetime.now().date()))
+    if not active_policy.scalars().first():
+        return {"success": False, "error": {"message": "No active insurance policy found. Please apply for a policy first."}}
 
     count = await db.scalar(select(Claim.id))
     claim_number = f"C-KA-{datetime.now().year}-{str((count or 0) + 1).zfill(5)}"
