@@ -189,10 +189,10 @@ async def verify_land_with_satellite(payload: VerifyLandRequest):
     # 5. Soil moisture
     soil_moisture = None
     try:
-        if aoi:
-            soil_moisture = await get_soil_moisture(aoi)
+        first_ndvi = ndvi_zones[0].get("ndvi_mean") if ndvi_zones else None
+        soil_moisture = await get_soil_moisture(aoi, ndvi_mean=first_ndvi, season=holding.get("season"))
         if soil_moisture:
-            pipeline_steps.append({"step": "soil_moisture", "status": "completed", "message": f"Soil moisture: {soil_moisture}%"})
+            pipeline_steps.append({"step": "soil_moisture", "status": "completed", "message": f"Estimated soil moisture: {soil_moisture}% (NDVI-based estimate)"})
         else:
             pipeline_steps.append({"step": "soil_moisture", "status": "completed", "message": "Sentinel-1 estimate"})
     except Exception as e:
@@ -270,6 +270,16 @@ async def verify_land_with_satellite(payload: VerifyLandRequest):
     source = ndvi_result.get("source") if ndvi_result else None
     radar_fallback = ndvi_result.get("used_radar_fallback", False) if ndvi_result else False
 
+    # Determine staleness from scan date
+    scan_date = ndvi_result.get("scan_date") if ndvi_result else None
+    is_stale = False
+    if scan_date:
+        try:
+            scan_dt = datetime.datetime.strptime(scan_date, "%Y-%m-%d").date()
+            is_stale = (datetime.date.today() - scan_dt).days > 30
+        except ValueError:
+            is_stale = False
+
     response = {
         "success": True,
         "data": {
@@ -286,7 +296,22 @@ async def verify_land_with_satellite(payload: VerifyLandRequest):
             "anomalies": anomalies,
             "timeseries": timeline.get("timeseries") if timeline else [],
             "zone_lines": timeline.get("zone_lines") if timeline else [],
-            "scan_date": ndvi_result.get("scan_date") if ndvi_result else None,
+            "scan_date": scan_date,
+            "sceneSummary": {
+                "sourcePriority": "Sentinel-2" if not radar_fallback else "Sentinel-1",
+                "latestAvailableDate": scan_date,
+                "stale": is_stale,
+                "onlineStatus": "online" if scenes else "offline"
+            },
+            "location": {
+                "district": holding["district"],
+                "taluk": holding["taluk"],
+                "village": holding["village"],
+                "surveyNumber": holding["survey_number"],
+                "latitude": holding.get("latitude"),
+                "longitude": holding.get("longitude"),
+                "geometryType": "Point" if holding.get("latitude") else "VillageBoundary"
+            }
         }
     }
 

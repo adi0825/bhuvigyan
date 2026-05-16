@@ -104,6 +104,23 @@ export interface ZoneLine {
   data: Array<{ date: string; ndvi: number }>;
 }
 
+export interface SceneSummary {
+  sourcePriority: string;
+  latestAvailableDate: string | null;
+  stale: boolean;
+  onlineStatus: string;
+}
+
+export interface LocationSummary {
+  district: string;
+  taluk: string;
+  village: string;
+  surveyNumber: string;
+  latitude: number | null;
+  longitude: number | null;
+  geometryType: string;
+}
+
 export interface SatelliteVerification {
   land_holding_id: string;
   label: string;
@@ -138,6 +155,8 @@ export interface SatelliteVerification {
   pipeline_steps: Array<{ step: string; status: string; message?: string }>;
   truth_packet: Record<string, unknown>;
   verification_status: string;
+  sceneSummary?: SceneSummary;
+  location?: LocationSummary;
 }
 
 export const myLandApi = {

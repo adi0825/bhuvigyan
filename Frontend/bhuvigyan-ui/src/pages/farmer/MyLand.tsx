@@ -743,6 +743,43 @@ function LandProfileCard({ holding, verification, onVerify, onDownload, onDelete
               </div>
             </div>
           </div>
+
+          {/* Soil Moisture Panel */}
+          <div>
+            <h4 className="text-xs font-bold text-[#1a1a1a] mb-2 flex items-center gap-1"><Navigation className="w-3 h-3 text-[#1a6b3c]" /> Moisture Analysis</h4>
+            <div className="bg-white rounded-lg border border-gray-200 p-3 space-y-2">
+              {(() => {
+                const raw = v?.soil_moisture || '';
+                const match = raw.match(/([\d.]+)/);
+                const val = match ? parseFloat(match[1]) : null;
+                const isEstimate = raw.includes('estimate') || raw.includes('NDVI-based');
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-[#6b7280]">Current estimate</span>
+                      <span className="text-sm font-bold text-[#1a1a1a]">{raw}</span>
+                    </div>
+                    {val != null && (
+                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(0, val))}%`, backgroundColor: val >= 50 ? '#3b82f6' : val >= 30 ? '#60a5fa' : '#93c5fd' }} />
+                      </div>
+                    )}
+                    <div className="flex items-start gap-1 text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-100">
+                      <Info className="w-3 h-3 shrink-0 mt-0.5" />
+                      <span>{isEstimate ? 'Soil moisture is estimated from NDVI and season. NISAR/Bhoonidhi soil moisture product not available.' : 'Sentinel-1 moisture estimate. Higher resolution confirmation recommended.'}</span>
+                    </div>
+                    {/* Stale notice */}
+                    {v?.sceneSummary?.stale && (
+                      <div className="flex items-start gap-1 text-[10px] text-blue-700 bg-blue-50 p-1.5 rounded border border-blue-100">
+                        <Clock className="w-3 h-3 shrink-0 mt-0.5" />
+                        <span>Scene data is older than 30 days. Latest available: {v.sceneSummary.latestAvailableDate || 'unknown'}. Results reflect historical observation.</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       </div>
     </GovCard>

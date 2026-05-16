@@ -154,7 +154,7 @@ class GeometryParser:
     def _area_sqm(geom) -> float:
         """
         Approximate area in sq meters using Haversine.
-        Accurate enough for Karnataka farm parcels.
+        Accurate enough for Karnataka farm land holdings.
         """
         if geom.geom_type == "Polygon":
             coords = list(geom.exterior.coords)

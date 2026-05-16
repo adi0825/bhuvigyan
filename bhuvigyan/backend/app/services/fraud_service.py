@@ -95,7 +95,7 @@ def compute_fraud_score(
                 "factor": "uniform_ndvi",
                 "weight": 10,
                 "detail": (
-                    "Suspiciously uniform NDVI across parcel. "
+                    "Suspiciously uniform NDVI across land holding. "
                     "May indicate synthetic data."
                 ),
                 "severity": "medium"
