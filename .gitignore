@@ -1,15 +1,35 @@
-# Frontend folders (excluded as per requirement)
-# frontend/
-# bhuvigyan-frontend/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
 
-# Bhuvigyan folders (excluded as per requirement)
-# bhuvigyan/
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+.nuxt/
+.cache/
+.vuepress/dist/
 
 # Build artifacts
 target/
 build/
-dist/
-node_modules/
 *.jar
 *.war
 *.ear
@@ -21,10 +41,14 @@ node_modules/
 *.swp
 *.swo
 *~
+.project
+.classpath
+.settings/
 
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Logs
 *.log
@@ -33,6 +57,8 @@ logs/
 # Environment files
 .env.local
 .env.*.local
+.env
+*.env
 
 # Docker volumes
 data/
@@ -56,3 +82,4 @@ test-output/
 *.tmp
 *.temp
 .cache/
+uploads/
