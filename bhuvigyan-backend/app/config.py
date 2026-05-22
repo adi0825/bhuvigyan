@@ -40,6 +40,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
+        "*",
     ]
 
     OTP_RATE_LIMIT: int = 5
@@ -59,7 +60,14 @@ class Settings(BaseSettings):
     # Bhoonidhi API (ISRO satellite data STAC)
     BHOONIDHI_BASE_URL: str = "https://bhoonidhi-api.nrsc.gov.in"
     BHOONIDHI_USER_ID: str = ""
+    BHOONIDHI_USERNAME: str = ""
     BHOONIDHI_PASSWORD: str = ""
+    
+    # OpenStreetMap Nominatim
+    NOMINATIM_USER_AGENT: str = "bhuvigyan-fraud-detection/1.0"
+    
+    # GeoNames
+    GEONAMES_USERNAME: str = ""
 
     # Copernicus Open Access Hub (Sentinel direct)
     COPERNICUS_HUB_URL: str = "https://scihub.copernicus.eu/dhus"

@@ -42,11 +42,11 @@ def generate_truth_packet(
             "sowing_date": holding.get("sowing_date"),
             "has_multiple_crops": holding.get("has_multiple_crops"),
             "secondary_crop": holding.get("secondary_crop"),
-            "detected_crop": crop_mix.get("primary_crop") if crop_mix else None,
-            "crop_confidence": crop_mix.get("primary_confidence") if crop_mix else None,
+            "detected_crop": (crop_mix.get("primary_crop") or {}).get("name") if isinstance(crop_mix.get("primary_crop"), dict) else (crop_mix.get("primary_crop") if crop_mix else None),
+            "crop_confidence": crop_mix.get("confidence") if crop_mix else None,
             "crop_match": crop_mix.get("declared_crop_match") if crop_mix else None,
             "season_consistency": crop_mix.get("season_consistency") if crop_mix else None,
-            "intercropping_detected": crop_mix.get("intercropping_detected") if crop_mix else None,
+            "intercropping_detected": crop_mix.get("intercropping") if crop_mix else None,
             "bare_soil_pct": crop_mix.get("bare_soil_pct") if crop_mix else None,
             "crop_mix": crop_mix.get("crops") if crop_mix else [],
         },
@@ -177,9 +177,11 @@ def truth_packet_to_text(truth: Dict[str, Any]) -> str:
 def _verification_recommendation(status: str, crop_mix: Dict, anomalies: List) -> str:
     if status == "Verified":
         return "Satellite data confirms declared crop and location. No anomalies detected."
+    if status == "Auto-verified":
+        return "Satellite analysis completed. No declared crop to verify against."
     if status == "Partial":
         reasons = []
-        if crop_mix and not crop_mix.get("declared_crop_match"):
+        if crop_mix and crop_mix.get("declared_crop_match") is False:
             reasons.append("detected crop differs from declaration")
         if anomalies:
             reasons.append("NDVI anomalies detected")
@@ -189,9 +191,12 @@ def _verification_recommendation(status: str, crop_mix: Dict, anomalies: List) -
 
 def _build_flags(crop_mix: Dict, anomalies: List, radar_fallback: bool) -> List[Dict]:
     flags = []
-    if crop_mix and not crop_mix.get("declared_crop_match"):
-        flags.append({"severity": "warning", "message": f"Detected crop ({crop_mix.get('primary_crop')}) does not match declared crop ({crop_mix.get('declared_crop')})"})
-    if crop_mix and crop_mix.get("intercropping_detected"):
+    if crop_mix and crop_mix.get("declared_crop_match") is False:
+        primary = crop_mix.get("primary_crop")
+        primary_name = primary.get("name") if isinstance(primary, dict) else primary
+        declared = crop_mix.get("declared_crop") or "Not declared"
+        flags.append({"severity": "warning", "message": f"Detected crop ({primary_name}) does not match declared crop ({declared})"})
+    if crop_mix and crop_mix.get("intercropping"):
         flags.append({"severity": "info", "message": "Intercropping detected — multiple vegetation signatures found"})
     if anomalies:
         for a in anomalies[:3]:

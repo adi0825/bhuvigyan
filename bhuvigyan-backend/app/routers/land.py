@@ -310,14 +310,24 @@ async def fetch_rtc(
     )
 
 
+class SatelliteAnalyzeRequest(BaseModel):
+    lat: float
+    lng: float
+    state: str = ""
+    district: str = ""
+    taluk: str = ""
+    village: str = ""
+    survey_number: str = ""
+    surveyNo: str = ""  # frontend sends camelCase
+
 @router.post("/land/satellite-analyze")
-async def satellite_analyze(request: dict):
+async def satellite_analyze(request: SatelliteAnalyzeRequest):
     """
     Analyze satellite data for given coordinates using real GEE.
     Returns satellite analysis data with NDVI, crop health, and other parameters.
     """
-    lat = request.get("lat")
-    lng = request.get("lng")
+    lat = request.lat
+    lng = request.lng
 
     if lat is None or lng is None:
         raise HTTPException(status_code=400, detail="Latitude and longitude are required")
@@ -327,22 +337,23 @@ async def satellite_analyze(request: dict):
     from app.services.gee_init import initialize_gee, GEE_INIT_ERROR
     from app.services.satellite_service import GEE_AVAILABLE
 
-    data_source = "Mock (GEE unavailable)"
+    data_source = "No satellite data available"
     gee_error = None
 
     if not GEE_AVAILABLE:
-        data_source = "Mock (earthengine-api not installed)"
+        data_source = "No satellite data available (earthengine-api not installed)"
         gee_error = "earthengine-api library not installed. Run: pip install earthengine-api"
     elif not initialize_gee():
-        data_source = "Mock (GEE not initialized)"
+        data_source = "No satellite data available (GEE not initialized)"
         gee_error = f"GEE initialization failed: {GEE_INIT_ERROR}. Run: earthengine authenticate"
 
-    state_name = request.get("state", "")
+    state_name = request.state or ""
     try:
-        analysis = satellite_service.get_full_analysis(lat, lng, buffer_m=500, state=state_name)
+        analysis = satellite_service.get_full_analysis(lat, lng, buffer_m=100, state=state_name)
 
         # Check if real data was used
-        if analysis.get("ndvi", {}).get("source", "") != "Simulated (GEE unavailable)":
+        ndvi_source = analysis.get("ndvi", {}).get("source", "")
+        if ndvi_source and ndvi_source not in ("No satellite data available", "Simulated (GEE unavailable)"):
             data_source = "Google Earth Engine (Real-time)"
             gee_error = None
 
@@ -366,18 +377,34 @@ async def satellite_analyze(request: dict):
             [lat - offset * 0.8, lng - offset * 0.8],
         ]
 
-        # Generate NDVI history (6 months)
-        months = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026']
-        current_ndvi = ndvi_data.get("ndvi", 0.5)
-        ndvi_history = []
-        for i, month in enumerate(months):
-            ndvi_history.append({
-                "month": month,
-                "value": round((current_ndvi - (6 - i) * 0.06), 2)
-            })
+        # Real NDVI value (None if satellite unavailable)
+        current_ndvi = ndvi_data.get("ndvi")
 
-        # Determine crop health
-        crop_health = "Healthy" if current_ndvi > 0.6 else "Moderate" if current_ndvi > 0.4 else "Poor"
+        # Fetch real NDVI timeseries from GEE (6 months) — no synthetic fallback
+        ndvi_history = []
+        if current_ndvi is not None:
+            try:
+                ts = satellite_service.get_ndvi_timeseries(lat, lng, months=6, buffer_m=100)
+                if ts and isinstance(ts, list):
+                    for pt in ts:
+                        dt = datetime.strptime(pt.get("date", ""), "%Y-%m-%d")
+                        ndvi_history.append({
+                            "month": dt.strftime("%b %Y"),
+                            "value": round(pt.get("ndvi", 0), 2)
+                        })
+                # If timeseries is empty but we have a current point, append it
+                if not ndvi_history:
+                    scan_dt = ndvi_data.get("scan_date", datetime.utcnow().strftime("%Y-%m-%d"))
+                    dt = datetime.strptime(scan_dt, "%Y-%m-%d")
+                    ndvi_history.append({"month": dt.strftime("%b %Y"), "value": round(current_ndvi, 2)})
+            except Exception:
+                pass
+
+        # Determine crop health from real NDVI only
+        if current_ndvi is None:
+            crop_health = "Unknown — no satellite data"
+        else:
+            crop_health = "Healthy" if current_ndvi > 0.6 else "Moderate" if current_ndvi > 0.4 else "Poor"
 
         crop_type = crop_display.get("primary", "Unknown") if crop_display else "Unknown"
         flood_risk = {
@@ -390,13 +417,13 @@ async def satellite_analyze(request: dict):
         # Build response in shared schema format
         land_data = {
             "state": state_name,
-            "district": request.get("district", ""),
-            "taluk": request.get("taluk", ""),
-            "village": request.get("village", ""),
-            "surveyNo": request.get("surveyNo", ""),
+            "district": request.district,
+            "taluk": request.taluk,
+            "village": request.village,
+            "surveyNo": request.surveyNo or request.survey_number,
             "lat": lat,
             "lng": lng,
-            "area": round(0.3 + (current_ndvi * 0.2), 2),
+            "area": round(0.3 + (current_ndvi * 0.2), 2) if current_ndvi is not None else None,
             "landUse": "Agricultural",
             "rtcStatus": "Verified",
             "plotPolygon": plot_polygon,
@@ -407,15 +434,15 @@ async def satellite_analyze(request: dict):
             "secondaryCrop": crop_display.get("secondary") if crop_display else None,
             "mixedCropFlag": analysis.get("mixed_crop_flag", False),
             "cropConfidence": analysis.get("crop_confidence", 0),
-            "cropCoverage": round(65 + (current_ndvi * 20)),
-            "soilMoisture": round(50 + (ndwi_data.get("ndwi", 0) * 100)),
-            "fraudScore": round(20 + (1 - current_ndvi) * 60),
+            "cropCoverage": round(65 + (current_ndvi * 20)) if current_ndvi is not None else None,
+            "soilMoisture": round(50 + (ndwi_data.get("ndwi") * 100)) if ndwi_data.get("ndwi") is not None else None,
+            "fraudScore": round(20 + (1 - current_ndvi) * 60) if current_ndvi is not None else None,
             "anomaly": "None Detected",
             "sarStatus": f"Flood Risk: {flood_risk['risk_level']}" if flood_risk['flood_detected'] else "Active — No Flood",
             "floodRisk": flood_risk,
             "landUseClassification": "Agricultural land confirmed",
             "historicalBaseline": "Agricultural land confirmed (10 years)",
-            "preSowingNDVI": round(current_ndvi - 0.15, 2),
+            "preSowingNDVI": round(current_ndvi - 0.15, 2) if current_ndvi is not None else None,
             "lastSatelliteDate": ndvi_data.get("scan_date", datetime.utcnow().strftime("%Y-%m-%d")),
             "coordinatesVerified": False,
             "fetchedAt": datetime.utcnow().isoformat(),
@@ -492,3 +519,72 @@ async def verify_land(request: dict):
         "verificationId": verification_id,
         "verifiedAt": datetime.utcnow().isoformat()
     }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# GET /api/v1/land/analyze  —  Full satellite + geocode + crop classification
+# ═════════════════════════════════════════════════════════════════════════════
+@router.get("/land/analyze")
+async def analyze_land(
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+    survey_no: str = Query("", description="Survey number"),
+    district: str = Query("", description="District name"),
+):
+    """
+    Analyze land at given coordinates.
+    Calls Bhuvan/Nominatim → GEE/CDSE/MPC → crop classification.
+    Never crashes. Always returns valid JSON with source attribution.
+    """
+    from app.services.satellite_router import analyze_location
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        result = await analyze_location(lat, lon, survey_no=survey_no, district=district)
+        return {
+            "success": True,
+            "data": result
+        }
+    except Exception as e:
+        logger.exception("analyze_land_failed")
+        # NEVER crash — return graceful JSON with nulls and reason
+        return {
+            "success": False,
+            "error": str(e),
+            "data": {
+                "coordinates": {"lat": lat, "lon": lon},
+                "admin": {
+                    "village": "Unknown (lat/lon confirmed)",
+                    "taluk": "",
+                    "district": district or "",
+                    "state": "",
+                    "source": "unavailable"
+                },
+                "satellite": {
+                    "ndvi_mean": None,
+                    "ndvi_min": None,
+                    "ndvi_max": None,
+                    "ndwi_mean": None,
+                    "sar_vv_mean": None,
+                    "scene_date": None,
+                    "cloud_cover_pct": None,
+                    "source": "unavailable",
+                    "reason": f"Analysis engine error: {str(e)}"
+                },
+                "crop_analysis": {
+                    "detected_season": "Unknown",
+                    "vegetation_status": "Unknown — analysis error",
+                    "crop_confidence": "LOW",
+                    "mixed_crop_flag": False,
+                    "irrigation_status": "Unknown",
+                    "fraud_risk_baseline": "HIGH",
+                    "fraud_risk_reason": f"System error prevented satellite verification: {str(e)}"
+                },
+                "data_freshness": {
+                    "latest_scene_age_days": None,
+                    "analysis_timestamp": datetime.utcnow().isoformat()
+                }
+            }
+        }

@@ -27,7 +27,7 @@ class Farmer(Base):
     crop_name = Column(String(100), nullable=True)
     latitude = Column(Numeric(10,8), nullable=True)
     longitude = Column(Numeric(11,8), nullable=True)
-    landData = Column(JSONB, nullable=True)  # Shared schema satellite data
+    landData = Column("landdata", JSONB, nullable=True)  # Shared schema satellite data
     satellite_verified = Column(Boolean, default=False)  # Set true if coordinatesVerified
     is_verified = Column(Boolean, default=False)
     is_demo = Column(Boolean, default=False)

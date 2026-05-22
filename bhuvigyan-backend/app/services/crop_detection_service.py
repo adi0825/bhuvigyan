@@ -3,23 +3,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-CROP_NDVI_SIGNATURES = {
-    "Paddy (Rice)": {"peak_months": [7, 8, 9, 10, 11], "peak_ndvi_range": [0.45, 0.85], "harvest_months": [11, 12, 1], "harvest_ndvi_drop": 0.25, "confidence_weight": 1.0},
-    "Wheat": {"peak_months": [2, 3, 4], "peak_ndvi_range": [0.35, 0.70], "harvest_months": [4, 5], "harvest_ndvi_drop": 0.20, "confidence_weight": 1.0},
-    "Sugarcane": {"peak_months": [6, 7, 8, 9, 10, 11, 12], "peak_ndvi_range": [0.50, 0.90], "harvest_months": [12, 1, 2, 3], "harvest_ndvi_drop": 0.15, "confidence_weight": 1.0},
-    "Cotton": {"peak_months": [8, 9, 10], "peak_ndvi_range": [0.40, 0.75], "harvest_months": [10, 11, 12], "harvest_ndvi_drop": 0.30, "confidence_weight": 1.0},
-    "Groundnut": {"peak_months": [8, 9, 10], "peak_ndvi_range": [0.35, 0.65], "harvest_months": [10, 11, 12], "harvest_ndvi_drop": 0.25, "confidence_weight": 1.0},
-    "Maize": {"peak_months": [7, 8, 9], "peak_ndvi_range": [0.40, 0.80], "harvest_months": [9, 10, 11], "harvest_ndvi_drop": 0.20, "confidence_weight": 1.0},
-    "Sorghum (Jowar)": {"peak_months": [8, 9, 10], "peak_ndvi_range": [0.30, 0.60], "harvest_months": [10, 11], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.9},
-    "Pearl Millet (Bajra)": {"peak_months": [8, 9], "peak_ndvi_range": [0.25, 0.55], "harvest_months": [9, 10], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.9},
-    "Chickpea (Gram)": {"peak_months": [1, 2, 3], "peak_ndvi_range": [0.30, 0.60], "harvest_months": [3, 4], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.9},
-    "Mustard": {"peak_months": [2, 3], "peak_ndvi_range": [0.35, 0.65], "harvest_months": [3, 4], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.9},
-    "Lentil (Masoor)": {"peak_months": [2, 3], "peak_ndvi_range": [0.30, 0.55], "harvest_months": [3, 4], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.85},
-    "Soybean": {"peak_months": [8, 9, 10], "peak_ndvi_range": [0.40, 0.75], "harvest_months": [10, 11], "harvest_ndvi_drop": 0.25, "confidence_weight": 0.9},
-    "Tur (Pigeon Pea)": {"peak_months": [10, 11, 12], "peak_ndvi_range": [0.35, 0.70], "harvest_months": [12, 1, 2], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.9},
-    "Moong (Green Gram)": {"peak_months": [3, 4, 9, 10], "peak_ndvi_range": [0.30, 0.60], "harvest_months": [4, 5, 10, 11], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.85},
-    "Urad (Black Gram)": {"peak_months": [3, 4, 9, 10], "peak_ndvi_range": [0.30, 0.60], "harvest_months": [4, 5, 10, 11], "harvest_ndvi_drop": 0.20, "confidence_weight": 0.85},
-    "Banana": {"peak_months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "peak_ndvi_range": [0.60, 0.90], "harvest_ndvi_drop": 0.10, "confidence_weight": 0.9},
+CROP_SIGNATURES = {
+    "Paddy (Rice)": {"peak_months": [7, 8, 9, 10, 11], "peak_ndvi_range": [0.40, 0.85], "sar_vv_range": [-12, -8], "confidence_weight": 1.0},
+    "Wheat": {"peak_months": [2, 3, 4], "peak_ndvi_range": [0.30, 0.70], "sar_vv_range": [-15, -10], "confidence_weight": 1.0},
+    "Sugarcane": {"peak_months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "peak_ndvi_range": [0.35, 0.90], "sar_vv_range": [-10, -5], "confidence_weight": 1.2},
+    "Cotton": {"peak_months": [8, 9, 10], "peak_ndvi_range": [0.35, 0.75], "sar_vv_range": [-14, -9], "confidence_weight": 1.0},
+    "Groundnut": {"peak_months": [8, 9, 10], "peak_ndvi_range": [0.30, 0.65], "sar_vv_range": [-16, -11], "confidence_weight": 1.0},
+    "Maize": {"peak_months": [7, 8, 9], "peak_ndvi_range": [0.35, 0.80], "sar_vv_range": [-13, -8], "confidence_weight": 1.0},
+    "Soybean": {"peak_months": [8, 9, 10], "peak_ndvi_range": [0.35, 0.75], "sar_vv_range": [-15, -10], "confidence_weight": 0.9},
+    "Moong (Green Gram)": {"peak_months": [3, 4, 9, 10], "peak_ndvi_range": [0.25, 0.60], "sar_vv_range": [-18, -14], "confidence_weight": 0.85},
 }
 
 
@@ -63,39 +55,71 @@ def detect_crop_mix(ndvi_zones: List[Dict], declared_crop: str, season: str, sow
         "crops": crops_detected,
         "bare_soil_pct": round(bare_soil_pct, 1),
         "intercropping_detected": intercropping,
-        "declared_crop_match": primary.lower() == (declared_crop or "").lower(),
+        "declared_crop_match": None if not declared_crop else primary.lower() == declared_crop.lower(),
         "season_consistency": _check_season_consistency(primary, season, current_month)
     }
 
 
-def _match_crop_signature(ndvi: float, month: int, declared_crop: str = None):
-    if ndvi < 0.05:
+def _match_crop_signature(ndvi: float, month: int, declared_crop: str = None, detected_season: str = "Unknown", sar_vv: float = None):
+    if ndvi < 0.1:
         return "Bare soil / No crop", 0.95
     best_crop = None
     best_score = 0
-    for crop, sig in CROP_NDVI_SIGNATURES.items():
+    for crop, sig in CROP_SIGNATURES.items():
         score = 0
+        
+        # 1. NDVI Score (0.4 weight)
         lo, hi = sig["peak_ndvi_range"]
         if lo <= ndvi <= hi:
-            score += 0.5
+            score += 0.4
         elif ndvi < lo:
-            score += max(0, 0.5 - (lo - ndvi) * 2)
+            score += max(0, 0.4 - (lo - ndvi) * 2)
         else:
-            score += max(0, 0.5 - (ndvi - hi) * 2)
+            score += max(0, 0.4 - (ndvi - hi) * 2)
+            
+        # 2. Season Score (0.3 weight)
         if month in sig["peak_months"]:
             score += 0.3
         else:
             nearest = min([abs(month - m) for m in sig["peak_months"]])
             score += max(0, 0.3 - nearest * 0.05)
+            
+        # 3. SAR VV Score (0.3 weight) - CRITICAL for high biomass crops like Sugarcane
+        if sar_vv is not None:
+            s_lo, s_hi = sig["sar_vv_range"]
+            if s_lo <= sar_vv <= s_hi:
+                score += 0.3
+            elif sar_vv < s_lo:
+                score += max(0, 0.3 - (s_lo - sar_vv) * 0.1)
+            else:
+                score += max(0, 0.3 - (sar_vv - s_hi) * 0.1)
+        else:
+            score += 0.15 # Neutral if no SAR
+            
         if declared_crop and crop.lower() in declared_crop.lower():
             score += 0.2
+        
+        # Seasonal Veto / Penalty
+        if detected_season != "Unknown":
+            rabi_crops = {"Wheat", "Mustard", "Chickpea (Gram)", "Lentil (Masoor)"}
+            kharif_crops = {"Paddy (Rice)", "Cotton", "Groundnut", "Maize", "Soybean"}
+            
+            if detected_season == "Zaid" and crop in rabi_crops:
+                score *= 0.2 # Heavy penalty for Rabi crop in summer
+            elif detected_season == "Kharif" and crop in rabi_crops:
+                score *= 0.2
+            elif detected_season == "Rabi" and crop in kharif_crops:
+                score *= 0.4
+
         score *= sig["confidence_weight"]
         if score > best_score:
             best_score = score
             best_crop = crop
+            
     if not best_crop:
         best_crop = "Mixed vegetation"
         best_score = max(0, ndvi)
+        
     confidence = min(0.95, best_score)
     return best_crop, confidence
 
@@ -113,7 +137,7 @@ def _compute_confidence(ndvi: float, month: int, sig: Dict) -> float:
         score += 0.3
     else:
         nearest = min([abs(month - m) for m in sig["peak_months"]])
-        score += max(0, 0.3 - nearest * 0.05)
+        score += max(0, 0.3 - nearest * 0.02)
     return min(0.95, score * sig["confidence_weight"])
 
 

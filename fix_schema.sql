@@ -1,6 +1,0 @@
--- Fix farmers table schema
-ALTER TABLE farmers ADD COLUMN IF NOT EXISTS aadhaar_hash VARCHAR(100);
-ALTER TABLE farmers ADD COLUMN IF NOT EXISTS district_code VARCHAR(10);
-ALTER TABLE farmers ADD COLUMN IF NOT EXISTS state_code VARCHAR(10);
-ALTER TABLE farmers ADD COLUMN IF NOT EXISTS bank_account_verified BOOLEAN DEFAULT false;
-ALTER TABLE farmers ADD COLUMN IF NOT EXISTS bank_changed_at TIMESTAMP;

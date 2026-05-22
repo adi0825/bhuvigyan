@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polygon } from 'react-leaflet';
 import {
   Leaf, Satellite, Loader2, Send, X, MapPin, Ruler,
@@ -37,8 +37,8 @@ interface FarmerLandData {
   plotPolygon: [number, number][];
 
   // Satellite Analysis
-  ndvi: number;
-  ndviHistory: { month: string; value: number }[];
+  ndvi: number | null;
+  ndviHistory: { month: string; value: number | null }[];
   cropHealth: string;
   cropType: string;
   cropCoverage: number;
@@ -48,104 +48,13 @@ interface FarmerLandData {
   sarStatus: string;
   landUseClassification: string;
   historicalBaseline: string;
-  preSowingNDVI: number;
+  preSowingNDVI: number | null;
   lastSatelliteDate: string;
   coordinatesVerified: boolean;
 
   // Timestamps
   fetchedAt: string;
   sentAt: string;
-}
-
-// Mock GEE data generator using shared schema
-function generateMockSatelliteData(lat: number, lng: number, state: string, district: string, taluk: string, village: string, surveyNo: string): FarmerLandData {
-  const now = new Date();
-
-  // Detect Maharashtra sugarcane demo coordinates — force healthy green data
-  const isSugarcaneDemo =
-    Math.abs(lat - 16.924381) < 0.001 &&
-    Math.abs(lng - 74.575982) < 0.001;
-
-  let ndvi: number;
-  let cropType: string;
-  let cropHealth: string;
-  let cropCoverage: number;
-  let soilMoisture: number;
-  let fraudScore: number;
-  let preSowingNDVI: number;
-  let coordinatesVerified: boolean;
-
-  if (isSugarcaneDemo || state === 'Maharashtra') {
-    // Healthy sugarcane signature — lush, green, high confidence
-    ndvi = 0.78;
-    cropType = 'Sugarcane';
-    cropHealth = 'Healthy';
-    cropCoverage = 92;
-    soilMoisture = 68;
-    fraudScore = 8;
-    preSowingNDVI = 0.62;
-    coordinatesVerified = true;
-  } else {
-    const ndviBase = 0.45 + ((lat % 1) * 0.3);
-    ndvi = Math.round(Math.min(0.95, ndviBase) * 100) / 100;
-    cropType = getCropByState(state);
-    cropHealth = ndvi > 0.6 ? 'Healthy' : ndvi > 0.4 ? 'Moderate' : 'Poor';
-    cropCoverage = Math.round(65 + Math.random() * 25);
-    soilMoisture = Math.round(50 + Math.random() * 35);
-    fraudScore = ndvi > 0.6 ? Math.round(10 + Math.random() * 15) : ndvi > 0.4 ? Math.round(30 + Math.random() * 20) : Math.round(55 + Math.random() * 30);
-    preSowingNDVI = Math.round((ndvi - 0.15) * 100) / 100;
-    coordinatesVerified = false;
-  }
-
-  // Generate 6-month NDVI history ending at current value
-  const months = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026'];
-  const ndviHistory = months.map((m, i) => ({
-    month: m,
-    value: Math.round((ndvi - (6 - i) * (isSugarcaneDemo ? 0.03 : 0.06)) * 100) / 100
-  }));
-
-  // Generate plot polygon (5 points around center)
-  const offset = 0.003;
-  const plotPolygon: [number, number][] = [
-    [lat + offset, lng - offset],
-    [lat + offset, lng + offset],
-    [lat, lng + offset * 1.2],
-    [lat - offset, lng],
-    [lat - offset * 0.8, lng - offset * 0.8],
-  ];
-
-  return {
-    state, district, taluk, village, surveyNo,
-    lat, lng,
-    area: isSugarcaneDemo ? 3.5 : Math.round((0.3 + Math.random() * 0.5) * 100) / 100,
-    landUse: 'Agricultural',
-    rtcStatus: 'Verified',
-    plotPolygon,
-    ndvi,
-    ndviHistory,
-    cropHealth,
-    cropType,
-    cropCoverage,
-    soilMoisture,
-    fraudScore,
-    anomaly: 'None Detected',
-    sarStatus: 'Active — No Flood',
-    landUseClassification: 'Agricultural land confirmed',
-    historicalBaseline: 'Agricultural land confirmed (10 years)',
-    preSowingNDVI,
-    lastSatelliteDate: now.toISOString(),
-    coordinatesVerified,
-    fetchedAt: now.toISOString(),
-    sentAt: '',
-  };
-}
-
-function getCropByState(state: string): string {
-  const map: Record<string, string> = {
-    Karnataka: 'Paddy', Maharashtra: 'Sugarcane', Telangana: 'Cotton',
-    Punjab: 'Wheat', Rajasthan: 'Bajra', 'Uttar Pradesh': 'Wheat'
-  };
-  return map[state] || 'Mixed Crops';
 }
 
 export default function LandPortal() {
@@ -197,7 +106,7 @@ export default function LandPortal() {
         setGeTiles(response.data.tiles || { rgb: '', ndvi: '' });
 
         if (response.data.geeError) {
-          toast.warning(`Satellite service unavailable — using realistic fallback: ${response.data.geeError}`, { icon: '⚠️', duration: 4000 });
+          toast(`Satellite service unavailable: ${response.data.geeError}`, { icon: '⚠️', duration: 4000 });
         } else {
           toast.success('✅ Satellite data fetched successfully!');
         }
@@ -206,14 +115,9 @@ export default function LandPortal() {
       }
     } catch (error: any) {
       console.error('Failed to fetch satellite data:', error);
-      const detail = error.response?.data?.detail || 'Backend unreachable';
-      toast.error(`Satellite data failed: ${detail}. Using realistic fallback.`);
-
-      // Fallback to local mock ONLY when backend fails
-      const mockData = generateMockSatelliteData(
-        lat, lng, form.state, form.district, form.taluk, form.village, form.surveyNo
-      );
-      setLandData(mockData);
+      const detail = error.response?.data?.detail || error.message || 'Backend unreachable';
+      toast.error(`Satellite data failed: ${detail}.`);
+      setLandData(null);
     } finally {
       setLoading(false);
     }
@@ -398,15 +302,21 @@ export default function LandPortal() {
               <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-semibold text-[#1a1a1a]">NDVI Value</span>
-                  <span className="text-sm font-bold" style={{ color: landData.ndvi < 0.4 ? '#ef4444' : landData.ndvi < 0.6 ? '#f59e0b' : '#22c55e' }}>
-                    {landData.ndvi.toFixed(2)}
-                  </span>
+                  {landData.ndvi != null ? (
+                    <span className="text-sm font-bold" style={{ color: landData.ndvi < 0.4 ? '#ef4444' : landData.ndvi < 0.6 ? '#f59e0b' : '#22c55e' }}>
+                      {landData.ndvi.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-bold text-gray-400">No data</span>
+                  )}
                 </div>
                 <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
                   <div className="absolute inset-0 rounded-full"
                     style={{ background: 'linear-gradient(to right, #ef4444 0%, #f59e0b 35%, #eab308 50%, #22c55e 65%, #16a34a 100%)' }} />
-                  <div className="absolute top-0 w-1 h-full bg-white border border-gray-400 rounded-full"
-                    style={{ left: `${landData.ndvi * 100}%`, transform: 'translateX(-50%)' }} />
+                  {landData.ndvi != null && (
+                    <div className="absolute top-0 w-1 h-full bg-white border border-gray-400 rounded-full"
+                      style={{ left: `${landData.ndvi * 100}%`, transform: 'translateX(-50%)' }} />
+                  )}
                 </div>
                 <div className="flex justify-between text-[10px] text-[#6b7280] mt-1">
                   <span className="text-red-600">0.0</span>
@@ -463,7 +373,7 @@ export default function LandPortal() {
                 </div>
                 <div className="p-3 bg-[#f0fdf4] rounded-lg border border-green-100">
                   <span className="text-xs text-[#6b7280] block">Data Source</span>
-                  <span className="font-semibold text-[#1a1a1a]">{landData.fetchedAt ? 'Backend API' : 'Local Mock'}</span>
+                  <span className="font-semibold text-[#1a1a1a]">Backend API</span>
                 </div>
               </div>
 
@@ -494,27 +404,32 @@ export default function LandPortal() {
               </h3>
               <p className="text-xs text-[#6b7280] mb-4">6-Month Crop Health Trend (Sentinel-2)</p>
               <div className="h-[250px] w-full bg-gray-50 rounded-xl border border-gray-200 flex items-end justify-between p-4 gap-2">
-                {landData.ndviHistory.map((item, idx) => {
-                  const height = item.value * 200;
-                  const isCurrent = idx === landData.ndviHistory.length - 1;
-                  const color = item.value < 0.4 ? '#ef4444' : item.value < 0.6 ? '#f59e0b' : '#22c55e';
-                  return (
-                    <div key={item.month} className="flex-1 flex flex-col items-center gap-1">
-                      <span className="text-[10px] font-bold text-[#6b7280]">{item.value.toFixed(2)}</span>
-                      <div
-                        className="w-full rounded-t-md transition-all relative"
-                        style={{ height: `${height}px`, backgroundColor: isCurrent ? '#16a34a' : color, opacity: isCurrent ? 1 : 0.7 }}
-                      >
-                        {isCurrent && (
-                          <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#1a6b3c] text-white text-[10px] px-2 py-0.5 rounded whitespace-nowrap">
-                            Current
-                          </div>
-                        )}
+                {landData.ndviHistory.filter(item => item.value != null).length === 0 ? (
+                  <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No NDVI history available</div>
+                ) : (
+                  landData.ndviHistory.filter(item => item.value != null).map((item, idx, arr) => {
+                    const val = item.value as number;
+                    const height = val * 200;
+                    const isCurrent = idx === arr.length - 1;
+                    const color = val < 0.4 ? '#ef4444' : val < 0.6 ? '#f59e0b' : '#22c55e';
+                    return (
+                      <div key={item.month} className="flex-1 flex flex-col items-center gap-1">
+                        <span className="text-[10px] font-bold text-[#6b7280]">{val.toFixed(2)}</span>
+                        <div
+                          className="w-full rounded-t-md transition-all relative"
+                          style={{ height: `${height}px`, backgroundColor: isCurrent ? '#16a34a' : color, opacity: isCurrent ? 1 : 0.7 }}
+                        >
+                          {isCurrent && (
+                            <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#1a6b3c] text-white text-[10px] px-2 py-0.5 rounded whitespace-nowrap">
+                              Current
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[#6b7280] text-center leading-tight">{item.month}</span>
                       </div>
-                      <span className="text-[10px] text-[#6b7280] text-center leading-tight">{item.month}</span>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
               <div className="flex justify-between text-[10px] text-[#6b7280] mt-2 px-1">
                 <span>0.0 (Bare)</span>

@@ -539,43 +539,12 @@ async def get_latest_satellite_data(udlrm: str, db: AsyncSession = Depends(get_d
             "refreshedAt": datetime.utcnow().isoformat()
         }
     except Exception as e:
-        # If GEE fails, use the existing fallback with small variations
+        # If GEE fails, preserve existing data and mark as unavailable — do NOT fabricate NDVI
         import logging
         logging.error(f"GEE satellite refresh failed: {e}")
-        current_ndvi = land_data.get("ndvi", 0.5)
-        new_ndvi = round(max(0.1, min(0.95, current_ndvi + random.uniform(-0.02, 0.02))), 2)
-
-        soil_moisture = land_data.get("soilMoisture", 60)
-        new_soil_moisture = max(0, min(100, soil_moisture + random.randint(-3, 3)))
-
-        crop_coverage = land_data.get("cropCoverage", 70)
-        new_crop_coverage = max(0, min(100, crop_coverage + random.randint(-2, 2)))
-
-        new_last_date = datetime.utcnow().strftime("%Y-%m-%d")
-
-        ndvi_history = land_data.get("ndviHistory", [])
-        ndvi_history.append({
-            "month": datetime.utcnow().strftime("%b %Y"),
-            "value": new_ndvi
-        })
-        if len(ndvi_history) > 12:
-            ndvi_history = ndvi_history[-12:]
-
-        if new_ndvi > 0.6:
-            fraud_score = random.randint(5, 20)
-        elif new_ndvi >= 0.4:
-            fraud_score = random.randint(21, 50)
-        else:
-            fraud_score = random.randint(51, 85)
 
         land_data.update({
-            "ndvi": new_ndvi,
-            "soilMoisture": new_soil_moisture,
-            "cropCoverage": new_crop_coverage,
-            "lastSatelliteDate": new_last_date,
-            "ndviHistory": ndvi_history,
-            "fraudScore": fraud_score,
-            "cropHealth": get_ndvi_label(new_ndvi),
+            "satelliteSource": "No satellite data available (GEE error)",
             "fetchedAt": datetime.utcnow().isoformat()
         })
 
@@ -585,25 +554,16 @@ async def get_latest_satellite_data(udlrm: str, db: AsyncSession = Depends(get_d
         return {
             "success": True,
             "data": land_data,
-            "source": "Fallback (GEE unavailable)",
+            "source": "No satellite data available (GEE error)",
             "refreshedAt": datetime.utcnow().isoformat()
         }
 
 
 def _generate_mock_refresh(base_data: dict, lat: float, lng: float) -> dict:
-    """Generate mock satellite refresh data with small variations."""
-    import random
-    current_ndvi = base_data.get("ndvi", 0.5)
-    # Small random variation ±0.05
-    new_ndvi = round(max(0.1, min(0.95, current_ndvi + random.uniform(-0.05, 0.05))), 2)
+    """Return data unchanged with unavailable marker — do NOT fabricate NDVI."""
     return {
         **base_data,
-        "ndvi": new_ndvi,
-        "cropHealth": get_ndvi_label(new_ndvi),
-        "cropCoverage": min(100, max(0, base_data.get("cropCoverage", 70) + random.randint(-5, 5))),
-        "soilMoisture": min(100, max(0, base_data.get("soilMoisture", 60) + random.randint(-10, 10))),
-        "lastSatelliteDate": datetime.utcnow().strftime("%Y-%m-%d"),
-        "satelliteSource": "Mock (GEE unavailable)",
+        "satelliteSource": "No satellite data available",
         "refreshedAt": datetime.utcnow().isoformat()
     }
 

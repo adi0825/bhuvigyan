@@ -1,0 +1,57 @@
+{
+  "timestamp": "2026-05-16T16:28:42.612375Z",
+  "coordinates": {
+    "lat": 17.924381,
+    "lon": 74.57982
+  },
+  "results": {
+    "TEST 1: Bhuvan Reverse Geocode": {
+      "status": "FAIL",
+      "error": "",
+      "fallback": "Nominatim fallback"
+    },
+    "TEST 1: Nominatim Fallback": {
+      "status": "PASS",
+      "detail": "Village: Barad"
+    },
+    "TEST 2: Bhuvan Forward Geocode": {
+      "status": "FAIL",
+      "error": "HTTP 404",
+      "fallback": "Nominatim fallback"
+    },
+    "TEST 2: Nominatim Forward Fallback": {
+      "status": "PASS",
+      "detail": "Lat=17.9547254, Lon=74.5864824"
+    },
+    "TEST 3: Bhoonidhi Auth": {
+      "status": "FAIL",
+      "error": "Credentials not configured",
+      "fallback": "CDSE STAC fallback"
+    },
+    "TEST 3: CDSE STAC Fallback": {
+      "status": "FAIL",
+      "error": "HTTP 400",
+      "fallback": ""
+    },
+    "TEST 4: GEE NDVI": {
+      "status": "FAIL",
+      "error": "GEE init failed: None",
+      "fallback": "CDSE/Sentinel Hub fallback"
+    },
+    "TEST 5: GEE NDWI": {
+      "status": "FAIL",
+      "error": "GEE not initialized",
+      "fallback": "Skipping"
+    },
+    "TEST 6: GEE SAR": {
+      "status": "FAIL",
+      "error": "GEE not initialized",
+      "fallback": "Skipping"
+    }
+  },
+  "summary": {
+    "total": 9,
+    "passed": 2,
+    "failed": 7
+  }
+}

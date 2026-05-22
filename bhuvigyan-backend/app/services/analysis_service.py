@@ -226,7 +226,7 @@ async def _compute_analysis(
     ndvi_data = {"mean": None, "health_label": None, "timeseries": [], "source": "unavailable"}
     if ndvi_lat and ndvi_lng:
         try:
-            current = sat_service.get_ndvi_current(ndvi_lat, ndvi_lng, buffer_m=500)
+            current = sat_service.get_ndvi_current(ndvi_lat, ndvi_lng, buffer_m=100)
             if isinstance(current, dict) and "error" not in current:
                 ndvi_data = {
                     "mean": current.get("ndvi"),
@@ -237,7 +237,7 @@ async def _compute_analysis(
                     "source": current.get("source", "GEE"),
                 }
             # Timeseries
-            ts = sat_service.get_ndvi_timeseries(ndvi_lat, ndvi_lng, months=12, buffer_m=500)
+            ts = sat_service.get_ndvi_timeseries(ndvi_lat, ndvi_lng, months=12, buffer_m=100)
             if isinstance(ts, list):
                 ts_with_anomaly = _detect_anomalies([
                     {"date": t.get("date", ""), "ndvi": t.get("ndvi", 0), "label": t.get("label", "")}

@@ -23,23 +23,13 @@ def _seasonal_ndvi(day: int, peak_day: int = 220, peak_val: float = 0.72, base: 
 
 def _generate_fallback_ndvi(lat: float, lng: float):
     today = datetime.today()
-    doy = _day_of_year(today)
-    # Northern-hemisphere agricultural curve (India Kharif peaks ~early Aug)
-    # Use coordinates to seed deterministic values
-    coord_seed = (lat * 1000 + lng * 1000) % 1000
-    base_val = _seasonal_ndvi(doy, peak_day=220, peak_val=0.70, base=0.15)
-    # Add small deterministic variation based on coordinates
-    val = round(base_val + (coord_seed - 500) * 0.0001, 4)
-    val = max(0.05, min(0.95, val))
-    health = get_ndvi_label(val)
-    # Deterministic cloud cover based on coordinates
-    cloud_pct = round(5 + (coord_seed % 20), 1)
+    logger.warning(f"GEE not available - returning empty NDVI data for ({lat}, {lng})")
     return {
-        "ndvi": val,
-        "health_label": health,
+        "ndvi": None,
+        "health_label": "No data",
         "scan_date": today.strftime('%Y-%m-%d'),
-        "cloud_cover_pct": cloud_pct,
-        "source": "Simulated (GEE unavailable)",
+        "cloud_cover_pct": None,
+        "source": "GEE_UNAVAILABLE",
         "band_nir": "B8",
         "band_red": "B4",
         "buffer_m": 500,
@@ -48,68 +38,44 @@ def _generate_fallback_ndvi(lat: float, lng: float):
 
 def _generate_fallback_ndwi(lat: float, lng: float):
     today = datetime.today()
-    doy = _day_of_year(today)
-    # NDWI loosely tracks NDVI but lower amplitude
-    # Use coordinates to seed deterministic values
-    coord_seed = (lat * 1000 + lng * 1000) % 1000
-    val = _seasonal_ndvi(doy, peak_day=220, peak_val=0.25, base=-0.25)
-    # Add small deterministic variation based on coordinates
-    val = round(val + (coord_seed - 500) * 0.00005, 4)
-    label = "Well Watered"
-    if val > 0.2:
-        label = "Well Watered"
-    elif val > 0.0:
-        label = "Adequate"
-    elif val > -0.2:
-        label = "Dry"
-    else:
-        label = "Very Dry"
+    logger.warning(f"GEE not available - returning empty NDWI data for ({lat}, {lng})")
     return {
-        "ndwi": val,
-        "label": label,
-        "moisture_status": label,
-        "source": "Simulated (GEE unavailable)",
+        "ndwi": None,
+        "label": "No data",
+        "moisture_status": "No data",
+        "source": "GEE_UNAVAILABLE",
         "scan_date": today.strftime('%Y-%m-%d'),
     }
 
 
 def _generate_fallback_flood(lat: float, lng: float):
+    logger.warning(f"GEE not available - returning empty flood data for ({lat}, {lng})")
     return {
         "flood_detected": False,
         "flood_area_sqm": 0,
         "flood_area_ha": 0,
         "confidence": 0.0,
         "risk_level": "Low",
-        "source": "Simulated (GEE unavailable)",
+        "source": "GEE_UNAVAILABLE",
         "threshold_db": -18.0,
     }
 
 
 def _generate_fallback_fire(lat: float, lng: float):
+    today = datetime.today()
+    logger.warning(f"GEE not available - returning empty fire data for ({lat}, {lng})")
     return {
         "fire_detected": False,
         "hotspot_count": 0,
         "closest_distance_km": 0,
-        "source": "Simulated (GEE unavailable)",
+        "source": "GEE_UNAVAILABLE",
         "scan_date": datetime.today().strftime('%Y-%m-%d'),
     }
 
 
 def _generate_fallback_timeseries(lat: float, lng: float, months: int = 12):
-    end = datetime.today()
-    start = end - timedelta(days=30 * months)
-    result = []
-    d = start
-    while d <= end:
-        doy = _day_of_year(d)
-        val = _seasonal_ndvi(doy, peak_day=220, peak_val=0.70, base=0.15)
-        result.append({
-            "date": d.strftime('%Y-%m-%d'),
-            "ndvi": val,
-            "label": get_ndvi_label(val),
-        })
-        d += timedelta(days=10)
-    return result
+    logger.warning(f"GEE not available - returning empty timeseries for ({lat}, {lng})")
+    return []
 
 try:
     import ee
@@ -128,8 +94,8 @@ if GEE_AVAILABLE and not GEE_INITIALIZED:
     if _gee_ok:
         logger.info("✓ Google Earth Engine initialized successfully")
     else:
-        logger.warning(f"✗ Google Earth Engine initialization failed: {GEE_INIT_ERROR}")
-        logger.warning("Falling back to mock satellite data. To use real GEE data, authenticate with: earthengine authenticate")
+        logger.error(f"✗ Google Earth Engine initialization failed: {GEE_INIT_ERROR}")
+        logger.error("REAL SATELLITE DATA UNAVAILABLE. Run 'earthengine authenticate' to enable real satellite data.")
 
 def ensure_gee():
     """Ensure GEE is initialized before use. Returns True if available."""
@@ -502,8 +468,8 @@ class SatelliteService:
             "ndwi": _generate_fallback_ndwi(lat, lng),
             "sar_flood": _generate_fallback_flood(lat, lng),
             "fire_alerts": _generate_fallback_fire(lat, lng),
-            "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "Simulated (GEE unavailable)", "bands": "B4-B3-B2"},
-            "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "Simulated (GEE unavailable)"},
+            "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "No satellite data available", "bands": "B4-B3-B2"},
+            "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "No satellite data available"},
             "thumbnail_b64": "",
             "computed_at": datetime.utcnow().isoformat()
         }
@@ -520,24 +486,24 @@ class SatelliteService:
         # Fetch ONE best Sentinel-2 image and reuse it for NDVI, NDWI, tiles, thumbnail
         image, region = self._get_best_s2_image(lat, lng, buffer_m=buffer_m)
 
-        # If no cloud-free image found in the window, use deterministic fallback data
+        # If no cloud-free image found in the window, return empty data
         if image is None:
-            logger.info(f"No cloud-free Sentinel-2 image for ({lat}, {lng}). Using fallback NDVI/NDWI.")
+            logger.info(f"No cloud-free Sentinel-2 image for ({lat}, {lng}). NDVI/NDWI unavailable.")
             return {
                 "ndvi": _generate_fallback_ndvi(lat, lng),
                 "ndwi": _generate_fallback_ndwi(lat, lng),
                 "sar_flood": self.get_sar_flood(lat, lng),
                 "fire_alerts": self.get_fire_alerts(lat, lng),
-                "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "Simulated (GEE unavailable)", "bands": "B4-B3-B2"},
-                "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "Simulated (GEE unavailable)"},
+                "satellite_tile": {"tile_url": "", "type": "true_color_rgb", "source": "No satellite data available", "bands": "B4-B3-B2"},
+                "ndvi_tile": {"tile_url": "", "type": "ndvi_heatmap", "source": "No satellite data available"},
                 "thumbnail_b64": "",
                 "computed_at": datetime.utcnow().isoformat()
             }
 
         # Extract NDVI and NDWI from the same image (single GEE reduceRegion call each)
-        # Start with fallback data so any GEE failure leaves meaningful values instead of zeros
-        ndvi = _generate_fallback_ndvi(lat, lng)
-        ndwi = _generate_fallback_ndwi(lat, lng)
+        # Start with None so failures don't fabricate data
+        ndvi = {"ndvi": None, "health_label": "No data", "scan_date": datetime.today().strftime('%Y-%m-%d'), "cloud_cover_pct": None, "source": "No satellite data available", "band_nir": "B8", "band_red": "B4", "buffer_m": buffer_m}
+        ndwi = {"ndwi": None, "label": "No data", "moisture_status": "No data", "source": "No satellite data available", "scan_date": datetime.today().strftime('%Y-%m-%d')}
         tile = {"tile_url": "", "type": "true_color_rgb", "source": "Sentinel-2 SR Harmonized", "bands": "B4-B3-B2"}
         ndvi_tile = {"tile_url": "", "type": "ndvi_heatmap", "source": "Sentinel-2 SR Harmonized"}
         thumb = ""

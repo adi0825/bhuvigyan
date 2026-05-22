@@ -41,6 +41,7 @@ export default function FarmerDashboard() {
   const { user } = useAuth();
   const { profile, land, carbon, notifications, claims, loading, unreadCount, refetch } = useFarmerData();
   const [farmerId, setFarmerId] = useState<string>('');
+  const [preferredLand, setPreferredLand] = useState<any>(null);
 
   useEffect(() => {
     if (user?.userId) {
@@ -48,11 +49,67 @@ export default function FarmerDashboard() {
     }
   }, [user]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('bhuvigyan:dashboard_land');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.analysis && parsed?.holding) {
+          setPreferredLand(parsed);
+        }
+      }
+    } catch {
+      // ignore malformed storage
+    }
+  }, []);
+
   const { data: satData, loading: satLoading, error: satError, isCached } = useSatelliteData(farmerId);
   const { timeseries: satTimeseries } = useSatelliteTimeseries(farmerId, 12);
 
+  // Build SatelliteData from preferred land analysis so BhumiAICard shows real values
+  const preferredSatData = preferredLand
+    ? {
+        ndvi: {
+          ndvi: preferredLand.analysis?.satellite?.ndvi_mean ?? null,
+          health_label: preferredLand.analysis?.crop_analysis?.vegetation_status ?? 'Unknown',
+          scan_date: preferredLand.analysis?.satellite?.scene_date ?? null,
+          cloud_cover_pct: preferredLand.analysis?.satellite?.cloud_cover_pct ?? null,
+          source: preferredLand.analysis?.satellite?.source ?? 'Unknown',
+        },
+        ndwi: {
+          ndwi: preferredLand.analysis?.satellite?.ndwi_mean ?? null,
+          label: preferredLand.analysis?.crop_analysis?.irrigation_status ?? 'Unknown',
+          moisture_status: preferredLand.analysis?.crop_analysis?.irrigation_status ?? 'Unknown',
+          scan_date: preferredLand.analysis?.satellite?.scene_date ?? null,
+        },
+        sar_flood: {
+          flood_detected: false,
+          confidence: 0,
+          risk_level: 'Low',
+          reason: 'No flood data',
+        },
+        fire: {
+          detected: false,
+          hotspot_count: 0,
+          closest_distance_km: 0,
+          source: 'N/A',
+          scan_date: preferredLand.analysis?.satellite?.scene_date ?? '',
+        },
+        analysisConfidence:
+          preferredLand.analysis?.crop_analysis?.crop_confidence === 'HIGH'
+            ? 0.85
+            : preferredLand.analysis?.crop_analysis?.crop_confidence === 'MEDIUM'
+            ? 0.55
+            : 0.25,
+        qualityWarnings: preferredLand.analysis?.crop_analysis?.fraud_risk_baseline === 'HIGH'
+          ? [preferredLand.analysis?.crop_analysis?.fraud_risk_reason ?? 'High fraud risk']
+          : [],
+        manualReviewRequired: preferredLand.analysis?.crop_analysis?.fraud_risk_baseline === 'HIGH',
+      }
+    : null;
+
   // Fallback: if satellite summary fails but timeseries has data, compute summary from latest point
-  const effectiveSatData = satData || (
+  const effectiveSatData = preferredSatData || satData || (
     satTimeseries && satTimeseries.length > 0
       ? {
           ndvi: {
@@ -65,6 +122,19 @@ export default function FarmerDashboard() {
         } as any
       : null
   );
+
+  // Build chart data from preferred land (single point) or fall back to timeseries
+  const preferredChartData = preferredLand && preferredLand.analysis?.satellite?.ndvi_mean != null
+    ? [{
+        month: preferredLand.analysis?.satellite?.scene_date
+          ? new Date(preferredLand.analysis.satellite.scene_date).toLocaleDateString('default', { month: 'short', year: 'numeric' })
+          : new Date().toLocaleDateString('default', { month: 'short', year: 'numeric' }),
+        ndvi: preferredLand.analysis.satellite.ndvi_mean,
+      }]
+    : [];
+  const chartData = preferredChartData.length > 0
+    ? preferredChartData
+    : satTimeseries?.map((t: any) => ({ month: t.date || t.month, ndvi: t.ndvi })) || carbon?.monthlyNdvi || [];
 
 
   const handleMarkAllRead = async () => {
@@ -103,39 +173,64 @@ export default function FarmerDashboard() {
   const summaryStatus = '—';
   const summaryVerified = effectiveSatData ? 'Verified' : '—';
 
+  // Preferred land data from My Land "Show on Dashboard"
+  const prefSat = preferredLand?.analysis?.satellite;
+  const prefCrop = preferredLand?.analysis?.crop_analysis;
+  const prefNdvi = prefSat?.ndvi_mean ?? null;
+  const prefNdwi = prefSat?.ndwi_mean ?? null;
+  const prefSceneDate = prefSat?.scene_date ?? null;
+  const prefCropStatus = prefCrop?.vegetation_status ?? null;
+  const prefCropCoverage = prefCrop?.crop_coverage_pct ?? null;
+
   // Extract landData from shared schema if available
   const landData = (profile as any)?.landData || null;
-  const ndviValue = landData?.ndvi ?? summaryNdvi ?? null;
-  const cropHealth = landData?.cropHealth ?? (ndviValue ? ndviLabel(ndviValue).text : '—');
+  const ndviValue = prefNdvi ?? landData?.ndvi ?? summaryNdvi ?? null;
+  const cropHealth = prefCropStatus ?? landData?.cropHealth ?? (ndviValue ? ndviLabel(ndviValue).text : '—');
 
-  // Derive missing metrics from live satellite data
-  const satNdvi = effectiveSatData?.ndvi?.ndvi ?? null;
-  const satNdwi = effectiveSatData?.ndwi?.ndwi ?? null;
+  // Derive missing metrics from live satellite data (prefer preferred land)
+  const satNdvi = prefNdvi ?? effectiveSatData?.ndvi?.ndvi ?? null;
+  const satNdwi = prefNdwi ?? effectiveSatData?.ndwi?.ndwi ?? null;
 
   // Crop coverage approximated from NDVI (NDVI 0→0%, 0.8→100%)
   const derivedCropCoverage = satNdvi != null ? Math.min(100, Math.max(0, Math.round((satNdvi / 0.8) * 100))) : null;
-  const cropCoverage = landData?.cropCoverage ?? derivedCropCoverage ?? null;
+  const cropCoverage = prefCropCoverage ?? landData?.cropCoverage ?? derivedCropCoverage ?? null;
 
   // Soil moisture approximated from NDWI (NDWI -0.4→0%, 0.4→100%)
   const derivedSoilMoisture = satNdwi != null ? Math.min(100, Math.max(0, Math.round(((satNdwi + 0.4) / 0.8) * 100))) : null;
-  const soilMoisture = landData?.soilMoisture ?? derivedSoilMoisture ?? null;
+  const soilMoisture = derivedSoilMoisture ?? landData?.soilMoisture ?? null;
 
   // Fraud score derived from NDVI (same heuristic as backend)
   const derivedFraudScore = satNdvi != null
     ? (satNdvi < 0.15 ? 85 : satNdvi < 0.30 ? 55 : satNdvi > 0.65 ? 10 : 15)
     : null;
-  const fraudScore = landData?.fraudScore ?? derivedFraudScore ?? null;
+  const fraudScore = derivedFraudScore ?? landData?.fraudScore ?? null;
 
-  const lastSatelliteDate = landData?.lastSatelliteDate ?? satData?.ndvi?.scan_date ?? null;
+  const lastSatelliteDate = prefSceneDate ?? landData?.lastSatelliteDate ?? satData?.ndvi?.scan_date ?? null;
 
   return (
     <div className="space-y-6 max-w-6xl">
+      {/* Preferred land indicator */}
+      {preferredLand && (
+        <div className="p-3 rounded-lg bg-[#F0FAF5] border border-[#016B4B]/20 text-sm flex items-center gap-2">
+          <MapPin className="w-5 h-5 shrink-0 text-[#016B4B]" />
+          <span className="text-[#111827]">
+            <b>Showing Dashboard for:</b> {preferredLand.holding.survey_number} — {preferredLand.holding.village}, {preferredLand.holding.district}
+          </span>
+        </div>
+      )}
       {/* DEBUG: show actual source */}
-      {satData?.ndvi?.source && (
-        <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${(satData.ndvi.source).includes('Simulated') ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
-          {(satData.ndvi.source).includes('Simulated') ? <AlertTriangle className="w-5 h-5 shrink-0" /> : <CheckCircle className="w-5 h-5 shrink-0" />}
+      {(preferredSatData?.ndvi?.source || satData?.ndvi?.source) && (
+        <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
+          ((preferredSatData?.ndvi?.source || satData?.ndvi?.source) || '').includes('Simulated') || ((preferredSatData?.ndvi?.source || satData?.ndvi?.source) || '').includes('unavailable')
+            ? 'bg-amber-50 border border-amber-200 text-amber-800'
+            : 'bg-green-50 border border-green-200 text-green-800'
+        }`}>
+          {((preferredSatData?.ndvi?.source || satData?.ndvi?.source) || '').includes('Simulated') || ((preferredSatData?.ndvi?.source || satData?.ndvi?.source) || '').includes('unavailable')
+            ? <AlertTriangle className="w-5 h-5 shrink-0" />
+            : <CheckCircle className="w-5 h-5 shrink-0" />
+          }
           <span>
-            <b>Source: {satData.ndvi.source}</b> {satData.cached ? '(cached)' : '(fresh)'}
+            <b>Source: {preferredSatData?.ndvi?.source || satData?.ndvi?.source}</b> {satData?.cached ? '(cached)' : '(fresh)'}
           </span>
         </div>
       )}
@@ -213,7 +308,7 @@ export default function FarmerDashboard() {
         {/* Bhumi AI Intelligence */}
         <BhumiAICard
           data={effectiveSatData}
-          loading={satLoading}
+          loading={satLoading && !preferredSatData}
           isCached={isCached}
         />
 
@@ -223,15 +318,20 @@ export default function FarmerDashboard() {
             <h3 className="font-bold text-[15px] text-[#111827] flex items-center gap-2">
               <TrendingUp size={18} className="text-[#016B4B]" /> Vegetation Index (NDVI) Trend
             </h3>
-            <span className="px-2 py-1 bg-[#F0FAF5] text-[#016B4B] text-[10px] font-bold rounded-full">SATELLITE VERIFIED</span>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-1 bg-[#F0FAF5] text-[#016B4B] text-[10px] font-bold rounded-full">SATELLITE VERIFIED</span>
+              <button onClick={() => nav('/farmer/land')} className="text-[12px] font-medium text-[#016B4B] hover:underline flex items-center gap-1">
+                View full map <ArrowRight size={14} />
+              </button>
+            </div>
           </div>
           <div className="h-[220px]">
-            <NdviChart data={satTimeseries?.map(t => ({ month: (t as any).date || t.month, ndvi: t.ndvi })) || carbon?.monthlyNdvi || []} height={220} />
+            <NdviChart data={chartData} height={220} />
           </div>
           <div className="mt-3 flex items-center justify-between text-[11px] text-[#6B7280]">
-            <span>Last scan: {satData?.ndvi?.scan_date || '—'}</span>
-            <span>Cloud cover: {satData?.ndvi?.cloud_cover_pct ?? '—'}%</span>
-            <span>Source: Sentinel-2 SR</span>
+            <span>Last scan: {preferredSatData?.ndvi?.scan_date || satData?.ndvi?.scan_date || '—'}</span>
+            <span>Cloud cover: {preferredSatData?.ndvi?.cloud_cover_pct ?? satData?.ndvi?.cloud_cover_pct ?? '—'}%</span>
+            <span>Source: {preferredSatData?.ndvi?.source || satData?.ndvi?.source || 'Sentinel-2 SR'}</span>
           </div>
         </GovCard>
       </div>

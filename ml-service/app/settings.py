@@ -4,10 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=None, case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     # -------- Adapter modes --------
-    gee_mode: str = "dev"            # dev | real
+    gee_mode: str = "real"            # dev | real
     state_api_mode: str = "dev"
 
     # -------- Redis (Celery broker + result backend) --------

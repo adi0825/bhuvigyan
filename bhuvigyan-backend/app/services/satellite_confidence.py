@@ -19,8 +19,8 @@ def _is_cloud_contaminated(ndvi_data: dict) -> tuple:
     if isinstance(cloud, (int, float)) and cloud > 25:
         return True, f"Cloud cover {cloud}% > 25%"
     source = str(ndvi_data.get("source", ""))
-    if "Simulated" in source or "fallback" in source.lower():
-        return True, "Simulated/fallback data used"
+    if "Simulated" in source or "fallback" in source.lower() or "No satellite data" in source:
+        return True, "No real satellite data available"
     return False, ""
 
 
@@ -52,7 +52,7 @@ def _ndvi_confidence(ndvi_data: dict) -> float:
     if isinstance(cloud, (int, float)):
         score -= _clamp(cloud / 100.0, 0, 0.5)
     source = str(ndvi_data.get("source", ""))
-    if "Simulated" in source or "fallback" in source.lower():
+    if "Simulated" in source or "fallback" in source.lower() or "No satellite data" in source:
         score -= 0.4
     scan_date = ndvi_data.get("scan_date")
     if scan_date:
@@ -69,7 +69,7 @@ def _ndwi_confidence(ndwi_data: dict) -> float:
     """Score 0-1 for NDWI data quality."""
     score = 1.0
     source = str(ndwi_data.get("source", ""))
-    if "Simulated" in source or "fallback" in source.lower():
+    if "Simulated" in source or "fallback" in source.lower() or "No satellite data" in source:
         score -= 0.4
     scan_date = ndwi_data.get("scan_date")
     if scan_date:
@@ -86,7 +86,7 @@ def _sar_confidence(sar_data: dict) -> float:
     """Score 0-1 for SAR data quality."""
     score = 1.0
     source = str(sar_data.get("source", ""))
-    if "Simulated" in source or "fallback" in source.lower():
+    if "Simulated" in source or "fallback" in source.lower() or "No satellite data" in source:
         score -= 0.4
     scan_date = sar_data.get("scan_date")
     if scan_date:
@@ -236,34 +236,18 @@ def compute_crop_confidence(
     if ndvi_qual < 0.6:
         warnings.append("NDVI data quality low for crop classification")
 
-    # Single-image classification
+    # Single-image classification — conservative generic labels
     def _classify_single(ndvi: float, st: str) -> str:
         # Bare soil / empty land — no crop
         if ndvi < 0.15:
             return "No vegetation / Empty land"
         if ndvi > 0.6:
-            if st in {"PB", "HR", "UP", "MP", "Punjab", "Haryana", "Uttar Pradesh", "Madhya Pradesh"}:
-                return "Wheat"
-            if st in {"MH", "KA", "TN", "AP", "Maharashtra", "Karnataka", "Tamil Nadu", "Andhra Pradesh"}:
-                return "Sugarcane"
-            return "Paddy"
+            return "Dense vegetation (unclassified)"
         if ndvi > 0.4:
-            if st in {"MH", "GJ", "RJ", "Maharashtra", "Gujarat", "Rajasthan"}:
-                return "Cotton"
-            if st in {"KA", "TG", "MP", "Karnataka", "Telangana", "Madhya Pradesh"}:
-                return "Soybean"
-            if st in {"PB", "HR", "Punjab", "Haryana"}:
-                return "Maize"
-            return "Groundnut"
+            return "Growing crop (unclassified)"
         if ndvi > 0.25:
-            if st in {"RJ", "GJ", "MH", "Rajasthan", "Gujarat", "Maharashtra"}:
-                return "Bajra"
-            if st in {"KA", "AP", "TG", "Karnataka", "Andhra Pradesh", "Telangana"}:
-                return "Jowar"
-            return "Maize"
+            return "Sparse vegetation"
         # NDVI 0.15–0.25: very sparse / fallow
-        if st in {"RJ", "GJ", "Rajasthan", "Gujarat"}:
-            return "Fallow / Sparse"
         return "Early Growth / Mixed"
 
     primary = _classify_single(ndvi_val, state)
@@ -306,11 +290,11 @@ def compute_crop_confidence(
     if mixed:
         confidence *= 0.8
 
-    # Simulated/fallback data cannot reliably classify crops
+    # Missing real satellite data cannot reliably classify crops
     source = str(ndvi_data.get("source", ""))
-    if "Simulated" in source or "fallback" in source.lower():
+    if "Simulated" in source or "fallback" in source.lower() or "No satellite data" in source:
         confidence = min(confidence, 0.25)
-        warnings.append("Simulated data — crop type cannot be verified without real satellite imagery")
+        warnings.append("No real satellite imagery — crop type cannot be verified")
 
     # Empty land: cap confidence very low — we cannot classify a crop on bare soil
     if is_empty_land:
@@ -389,9 +373,9 @@ def compute_analysis_confidence(
     # Fire is a separate alert — keep it simple
     fire_detected = bool(fire_data.get("fire_detected", False)) if isinstance(fire_data, dict) else False
     fire_conf = 1.0 if fire_detected else 0.0
-    if isinstance(fire_data, dict) and fire_data.get("source", "").startswith("Simulated"):
+    if isinstance(fire_data, dict) and ("Simulated" in fire_data.get("source", "") or "No satellite data" in fire_data.get("source", "")):
         fire_conf = 0.3
-        warnings.append("Fire alert from simulated data")
+        warnings.append("Fire alert — no real satellite data available")
 
     return {
         "analysis_confidence": round(overall, 2),
